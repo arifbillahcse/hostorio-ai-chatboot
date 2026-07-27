@@ -23,9 +23,14 @@
     # Block dotfiles (.env above all).
     RewriteRule (^|/)\.(?!well-known) - [F,L]
 
-    # Serve real files in public/ directly (widget JS/CSS in Phase 6).
+    # Serve any real file directly. Covers the widget assets when the document
+    # root already points at public/.
     RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule ^public/ - [L]
+    RewriteRule ^ - [L]
+
+    # When the document root is the project root instead, map /widget/* onto
+    # public/widget/* so the embed URL is the same either way.
+    RewriteRule ^widget/(.*)$ public/widget/$1 [L]
 
     # Everything else goes through the front controller.
     RewriteRule ^ public/index.php [L]

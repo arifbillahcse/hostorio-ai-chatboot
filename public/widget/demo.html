@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hostorio AI Chatbot — widget demo</title>
+<style>
+    /*
+     * Deliberately aggressive page styles. This mimics an opinionated WordPress
+     * theme so the widget's shadow-root isolation is actually being tested:
+     * none of these rules should reach inside the widget.
+     */
+    * { box-sizing: border-box; }
+    button, textarea, input {
+        font-family: "Comic Sans MS", cursive !important;
+        font-size: 22px !important;
+        background: hotpink !important;
+        color: lime !important;
+        border: 6px dashed purple !important;
+        border-radius: 0 !important;
+        padding: 30px !important;
+    }
+    div { line-height: 3 !important; }
+    ul { list-style: square inside !important; }
+    a { color: red !important; }
+    body {
+        margin: 0;
+        font-family: Georgia, serif;
+        background: #eef2ff;
+        color: #1f2937;
+    }
+    .page { max-width: 720px; margin: 0 auto; padding: 48px 24px 120px; }
+    h1 { font-size: 30px; margin-bottom: 8px; }
+    .lead { color: #4b5563; }
+    .card {
+        background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+        padding: 20px; margin-top: 24px;
+    }
+    code { background: #f3f4f6; padding: 2px 5px; border-radius: 4px; font-size: 14px; }
+    pre { background: #111827; color: #e5e7eb; padding: 16px; border-radius: 10px; overflow-x: auto; }
+    pre code { background: none; color: inherit; padding: 0; }
+</style>
+</head>
+<body>
+<div class="page">
+    <h1>Widget demo</h1>
+    <p class="lead">
+        This page is styled badly on purpose — giant pink Comic Sans buttons, dashed purple
+        borders, triple line-height. If the widget below looks unaffected by any of it, the
+        shadow-root isolation is doing its job.
+    </p>
+
+    <div class="card">
+        <p>A normal page button, for comparison:</p>
+        <button type="button">I am the host page</button>
+        <ul>
+            <li>Host page list item</li>
+        </ul>
+        <p><a href="#">Host page link</a></p>
+    </div>
+
+    <div class="card">
+        <h2>Embedding</h2>
+        <p>Drop this into any page, before <code>&lt;/body&gt;</code>:</p>
+<pre><code>&lt;script src="https://example.com/widget/widget.js"
+        data-endpoint="https://example.com/api/chat"
+        data-accent="#2563eb"
+        data-position="bottom-right"
+        defer&gt;&lt;/script&gt;</code></pre>
+        <p>
+            For a signed-in customer, add a signed identity token so the assistant can see
+            their account:
+        </p>
+<pre><code>data-token="&lt;?= Hostorio\Context\IdentityToken::issue((int) $client-&gt;id) ?&gt;"</code></pre>
+    </div>
+</div>
+
+<script src="./widget.js"
+        data-endpoint="/api/chat"
+        data-position="bottom-right"
+        defer></script>
+</body>
+</html>

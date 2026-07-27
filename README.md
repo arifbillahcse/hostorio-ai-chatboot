@@ -10,10 +10,10 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 5 complete — the backend chat API works
+## Status: Phase 6 complete — customers can see and use it
 
-`POST /api/chat` now returns real, knowledge-grounded, cost-routed answers.
-What remains is the browser widget and the admin panel.
+The chatbot is now end-to-end usable: a chat bubble on the site, backed by a
+grounded, cost-routed API. What remains is the admin panel and hardening.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -22,7 +22,7 @@ What remains is the browser widget and the admin panel.
 | 3 | RAG — knowledge ingestion (WordPress + WHMCS + manual notes) | **Done** |
 | 4 | RAG — retrieval & context building | **Done** |
 | 5 | Chat engine integration | **Done** |
-| 6 | Frontend widget | Not started |
+| 6 | Frontend widget | **Done** |
 | 7 | Admin panel | Not started |
 | 8 | Testing & hardening | Not started |
 | 9 | Packaging & distribution | Not started |
@@ -367,12 +367,88 @@ their answer.
 
 ---
 
+## The chat widget
+
+One script tag, anywhere before `</body>`:
+
+```html
+<script src="https://support.example.com/widget/widget.js"
+        data-endpoint="https://support.example.com/api/chat"
+        data-accent="#2563eb"
+        data-position="bottom-right"
+        defer></script>
+```
+
+For a signed-in customer, add a signed identity token so the assistant can see
+their account — generated **server-side**, never supplied by the browser:
+
+```php
+data-token="<?= Hostorio\Context\IdentityToken::issue((int) $client->id) ?>"
+```
+
+Try it locally:
+
+```bash
+php -S 127.0.0.1:8090 -t public public/index.php
+# then open http://127.0.0.1:8090/widget/demo.html
+```
+
+### WordPress
+
+`integrations/wordpress/hostorio-chatbot.php` is a single-file plugin. Copy it
+into `wp-content/plugins/`, activate, and set your chatbot URL under
+**Settings → Hostorio Chatbot**. Load it site-wide, or untick that and place it
+with the `[hostorio_chat]` shortcode.
+
+To identify logged-in users, implement the two documented filters
+(`hostorio_chatbot_client_id` and `hostorio_chatbot_token`) — the plugin mints
+the token on the server so a browser can never claim an identity.
+
+### Why Shadow DOM
+
+The widget renders entirely inside a shadow root. That isn't polish: this drops
+into arbitrary WordPress themes, and without isolation the host theme reshapes
+the widget or the widget's CSS leaks into the page. `demo.html` is styled
+deliberately badly — giant pink Comic Sans buttons, dashed purple borders,
+triple line-height — and the browser tests assert that none of it reaches
+inside, and that the page's own styling is left untouched.
+
+### On "streaming"
+
+The widget posts once and reveals the reply progressively, which reads as live
+typing. **It is not token streaming**, and the code says so.
+
+Real SSE would need the provider layer to stream as well, and shared hosts
+routinely buffer responses through mod_deflate and FastCGI — which breaks SSE in
+ways that are miserable to diagnose from a support ticket. One reliable request
+beats a fragile stream. Set `WIDGET_TYPEWRITER=false` for a plain instant
+render; the reveal is also skipped automatically for anyone with
+`prefers-reduced-motion` set.
+
+### Model output is never trusted as markup
+
+Replies are built with `createTextNode` and `createElement`; `innerHTML` is
+never used on them. The model's answer is influenced by retrieved content, which
+includes customer-written ticket subjects — treating it as trusted HTML would
+turn a prompt injection into stored XSS on the hosting company's own site.
+Light formatting (`**bold**`, bullet lines, bare URLs) is built as real DOM
+nodes, and links get `rel="noopener noreferrer nofollow"`.
+
+### Branding
+
+Set once in `.env` (served from `GET /api/widget/config`), overridable per page
+with `data-` attributes: title, subtitle, welcome message, placeholder, accent
+colour, position, and the suggested opening questions shown on an empty chat.
+
+---
+
 ## Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET`  | `/health` | Liveness probe. Reveals nothing about the install. |
 | `GET`  | `/api/health/diagnostics` | Full diagnostics. **Guarded** — see below. |
+| `GET`  | `/api/widget/config` | Widget branding. Public; allowlisted keys only. |
 | `POST` | `/api/chat` | Chat endpoint. Returns a grounded answer. |
 
 Diagnostics are reachable only when `APP_DEBUG=true`, or with a bearer token
