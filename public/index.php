@@ -38,7 +38,24 @@ use Hostorio\Core\Request;
 use Hostorio\Core\Router;
 
 $request = Request::capture();
-$router  = new Router();
+
+/*
+ * The admin panel is handled ahead of the JSON router.
+ *
+ * It needs prefix matching (/admin, /admin/knowledge, /admin/conversation/export)
+ * and it renders HTML rather than JSON, so folding it into the exact-match
+ * router would mean teaching that router two things it otherwise does not need
+ * to know.
+ */
+if ($request->path === '/admin' || str_starts_with($request->path, '/admin/')) {
+    $page = trim(substr($request->path, strlen('/admin')), '/');
+
+    (new Hostorio\Admin\AdminController())->handle($request, $page)->send();
+
+    return;
+}
+
+$router = new Router();
 
 $health = new HealthController();
 $chat   = new ChatController();

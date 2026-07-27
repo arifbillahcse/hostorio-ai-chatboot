@@ -10,10 +10,11 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 6 complete — customers can see and use it
+## Status: Phase 7 complete — manageable without touching code
 
-The chatbot is now end-to-end usable: a chat bubble on the site, backed by a
-grounded, cost-routed API. What remains is the admin panel and hardening.
+The chatbot works end to end and can now be run from a browser: monitor spend,
+read conversations, write notes, change routing and rotate API keys. What
+remains is hardening and packaging.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -23,7 +24,7 @@ grounded, cost-routed API. What remains is the admin panel and hardening.
 | 4 | RAG — retrieval & context building | **Done** |
 | 5 | Chat engine integration | **Done** |
 | 6 | Frontend widget | **Done** |
-| 7 | Admin panel | Not started |
+| 7 | Admin panel | **Done** |
 | 8 | Testing & hardening | Not started |
 | 9 | Packaging & distribution | Not started |
 
@@ -439,6 +440,65 @@ nodes, and links get `rel="noopener noreferrer nofollow"`.
 Set once in `.env` (served from `GET /api/widget/config`), overridable per page
 with `data-` attributes: title, subtitle, welcome message, placeholder, accent
 colour, position, and the suggested opening questions shown on an empty chat.
+
+---
+
+## The admin panel
+
+At **`/admin`**. Set a password first:
+
+```bash
+php -r "echo password_hash('your-password', PASSWORD_DEFAULT);"
+# paste the result into ADMIN_PASSWORD_HASH in .env
+```
+
+| Page | What it is for |
+|---|---|
+| **Dashboard** | Spend per provider and per day, cost per answer, failure counts, where questions are being routed, most-asked questions, recent tool activity |
+| **Conversations** | Search transcripts, read them with per-message cost and model, export to CSV |
+| **Knowledge base** | Trigger a re-index, see what is indexed and what is pending, write and retire manual notes |
+| **Routing** | Change which provider handles each question type, answer length limits, extended thinking |
+| **Settings** | Rotate API keys, chat behaviour, widget branding |
+
+### Settings live in the database, not in .env
+
+Editing settings does **not** rewrite `.env`. Making a config file writable by
+the web server is a poor trade on shared hosting: anything that can write `.env`
+can rewrite the entire application's configuration, usually right next to code
+the server also executes. Overrides are stored in the database and layered over
+the file at boot, so an edit takes effect on the next request with nothing on
+disk writable.
+
+Two things deliberately stay in `.env` and cannot be changed from the panel:
+
+- **Database credentials** — they are needed *to reach* the settings table, and
+  a typo entered through a web form would lock the panel out of its own storage.
+- **`APP_KEY`** — it signs identity tokens. Changing it silently invalidates
+  every issued token, so it should be a deliberate deployment act.
+
+Everything editable is an explicit allowlist. Without one, a form field named
+`database.app.host` would repoint the application at another server.
+
+### API keys are write-only
+
+The panel shows *whether* a key is set, never the key. A blank field on save
+means "leave it alone", not "delete it" — otherwise every save would wipe the
+keys, since the field is rendered empty by design.
+
+### Other protections
+
+- Every page redirects to login when signed out; every mutation is a POST with a
+  CSRF token, then a 303 redirect so a refresh cannot replay it.
+- Five failed logins lock an IP out for 15 minutes. A single password with no
+  lockout is a guessing game the attacker eventually wins.
+- The session id is regenerated on login, defeating session fixation.
+- The password hash is read from `.env`, never the database — SQL write access
+  should not be enough to grant yourself a login.
+- Every template escapes on output. This panel renders customer questions,
+  ticket subjects and model answers, all of which are attacker-influenced.
+- CSV export prefixes cells starting with `=`, `+`, `-` or `@`. Spreadsheets
+  execute those, so a customer typing `=cmd|'/c calc'!A1` into the chat would
+  otherwise get code execution on the machine of whoever opens the export.
 
 ---
 

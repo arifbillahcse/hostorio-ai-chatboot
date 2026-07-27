@@ -13,6 +13,14 @@ namespace Hostorio\Core;
 final class Response
 {
     /**
+     * Raw body for non-JSON responses (the admin panel renders HTML). When set,
+     * it is sent verbatim and $payload is ignored.
+     */
+    private ?string $body = null;
+
+    private string $contentType = 'application/json; charset=utf-8';
+
+    /**
      * @param array<string, mixed>  $payload
      * @param array<string, string> $headers
      */
@@ -21,6 +29,34 @@ final class Response
         private int $status = 200,
         private array $headers = [],
     ) {
+    }
+
+    /**
+     * An HTML page.
+     *
+     * Admin pages are never cacheable: they show customer conversations, and a
+     * shared proxy holding one is a disclosure waiting to happen.
+     */
+    public static function html(string $body, int $status = 200): self
+    {
+        $response = new self([], $status);
+        $response->body = $body;
+        $response->contentType = 'text/html; charset=utf-8';
+
+        return $response;
+    }
+
+    /**
+     * Redirect. Used after every successful admin POST so a refresh cannot
+     * replay the action.
+     */
+    public static function redirect(string $location, int $status = 303): self
+    {
+        $response = new self([], $status, ['Location' => $location]);
+        $response->body = '';
+        $response->contentType = 'text/html; charset=utf-8';
+
+        return $response;
     }
 
     /**
@@ -60,7 +96,7 @@ final class Response
         } else {
             http_response_code($this->status);
 
-            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Type: ' . $this->contentType);
             header('X-Content-Type-Options: nosniff');
             header('X-Request-Id: ' . Logger::requestId());
             // Chat responses are per-customer; never let a proxy cache them.
@@ -69,6 +105,12 @@ final class Response
             foreach ($this->headers as $name => $value) {
                 header($name . ': ' . $value);
             }
+        }
+
+        if ($this->body !== null) {
+            echo $this->body;
+
+            return;
         }
 
         echo json_encode(

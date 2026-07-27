@@ -23,14 +23,22 @@
     # Block dotfiles (.env above all).
     RewriteRule (^|/)\.(?!well-known) - [F,L]
 
-    # Serve any real file directly. Covers the widget assets when the document
-    # root already points at public/.
+    # Serve real *static assets* directly — the widget's JS and the demo page.
+    #
+    # Restricted to an extension allowlist rather than "any file that exists":
+    # with the document root at the project root, a blanket rule would happily
+    # serve /admin/AdminAuth.php or any other source file that is not covered by
+    # the directory denials above.
     RewriteCond %{REQUEST_FILENAME} -f
-    RewriteRule ^ - [L]
+    RewriteRule \.(css|js|mjs|map|html|png|jpe?g|gif|svg|ico|webp|woff2?|ttf)$ - [L]
 
     # When the document root is the project root instead, map /widget/* onto
     # public/widget/* so the embed URL is the same either way.
     RewriteRule ^widget/(.*)$ public/widget/$1 [L]
+
+    # Belt and braces: never serve a PHP file out of the application directories
+    # even if one of the rules above is edited later.
+    RewriteRule ^(admin|api|integrations)/.+\.php$ - [F,L]
 
     # Everything else goes through the front controller.
     RewriteRule ^ public/index.php [L]

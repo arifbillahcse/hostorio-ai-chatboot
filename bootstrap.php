@@ -97,6 +97,18 @@ Config::set($config);
 date_default_timezone_set((string) Config::get('app.timezone', 'UTC'));
 
 /*
+ * Layer any settings changed from the admin panel over the file configuration.
+ *
+ * Costs one indexed query per request, which buys the ability to change API
+ * keys, routing rules and widget branding without a deploy — and without making
+ * any file on disk writable by the web server. Silent when the database is
+ * unavailable, so the application still boots on file configuration alone.
+ */
+if (Config::get('admin.db_settings', true)) {
+    Hostorio\Admin\SettingsStore::apply();
+}
+
+/*
  * Error handling.
  *
  * Display is always off — a PHP notice rendered into a JSON response corrupts

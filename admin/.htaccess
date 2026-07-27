@@ -1,0 +1,8 @@
+# Deny direct web access. The admin panel is served through public/index.php.
+
+Require all denied
+
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
