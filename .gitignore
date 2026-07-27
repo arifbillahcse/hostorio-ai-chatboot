@@ -1,0 +1,21 @@
+# Environment / secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Runtime storage
+storage/logs/*.log
+storage/cache/*
+!storage/logs/.gitkeep
+!storage/cache/.gitkeep
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Dependencies (not used — raw PHP, but guard anyway)
+vendor/
+node_modules/

@@ -1,0 +1,46 @@
+# =============================================================================
+# Hostorio AI Chatbot — root Apache configuration (cPanel / shared hosting)
+#
+# Two jobs:
+#   1. Deny direct web access to application internals.
+#   2. Route every remaining request into public/index.php.
+#
+# This lets the package be uploaded straight into public_html (or a subfolder)
+# on hosts where the document root cannot be changed to public/.
+# =============================================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Preserve Authorization headers — some CGI/FastCGI setups strip them,
+    # which would break the diagnostics endpoint's bearer token.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Block direct access to application directories.
+    RewriteRule ^(config|core|database|storage|tools)/ - [F,L]
+
+    # Block dotfiles (.env above all).
+    RewriteRule (^|/)\.(?!well-known) - [F,L]
+
+    # Serve real files in public/ directly (widget JS/CSS in Phase 6).
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^public/ - [L]
+
+    # Everything else goes through the front controller.
+    RewriteRule ^ public/index.php [L]
+</IfModule>
+
+# Belt and braces: deny the .env file even if mod_rewrite is unavailable.
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
+# Never list directory contents.
+Options -Indexes
+
+# Do not advertise the PHP version.
+<IfModule mod_headers.c>
+    Header unset X-Powered-By
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>
