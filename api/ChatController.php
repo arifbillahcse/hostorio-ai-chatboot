@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Hostorio\Api;
 
-use Hostorio\Context\ContextBuilder;
+use Hostorio\Chat\ChatEngine;
+use Hostorio\Chat\ConversationStore;
 use Hostorio\Context\CustomerIdentity;
 use Hostorio\Core\Config;
 use Hostorio\Core\Logger;
@@ -12,14 +13,15 @@ use Hostorio\Core\RateLimiter;
 use Hostorio\Core\Request;
 use Hostorio\Core\Response;
 use Hostorio\Core\Security;
+use Hostorio\Llm\LlmException;
+use Throwable;
 
 /**
- * Chat endpoint.
+ * The chat endpoint.
  *
- * Phase 1 wires the full request path — validation, rate limiting, logging —
- * and stops short of generating an answer. The pipeline is therefore testable
- * end to end now, and Phase 5 only has to replace the placeholder response
- * with a real one.
+ * Validation, identity and rate limiting happen here; everything else is the
+ * ChatEngine's job. Keeping this thin means the security-relevant checks are
+ * all visible in one screen.
  */
 final class ChatController
 {
@@ -38,23 +40,18 @@ final class ChatController
             return Response::error('Please enter a message.', 422, 'invalid_input');
         }
 
-        // Customer id, when the widget is embedded in a logged-in WHMCS area.
-        $conversation = Security::sanitizeIdentifier((string) $request->input('conversation_id', ''));
+        $conversationId = Security::sanitizeIdentifier((string) $request->input('conversation_id', ''));
 
         /*
-         * Establish who is asking.
-         *
          * A `customer_id` in the request body is a claim from the browser, not
          * a fact — trusting it would let anyone read anyone else's services,
-         * tickets and invoices by changing a number. Only a signed token or a
-         * server-side session counts as proof; an unproven claim is logged and
-         * the question is answered without account context.
+         * tickets and invoices. Only a signed token or a server-side session
+         * counts as proof.
          */
         $identity = CustomerIdentity::fromRequest($request);
 
-        // Rate limit per verified customer where we have one, per IP otherwise.
-        // Deliberately not per *claimed* customer: that would let a caller
-        // sidestep the limit by inventing a new id for each request.
+        // Keyed on the verified id, or the IP. Keying on a claimed id would let
+        // a caller reset their own limit by inventing a new number.
         $rateKey = $identity->isVerified()
             ? 'customer:' . $identity->customerId
             : 'ip:' . $request->ip;
@@ -73,36 +70,63 @@ final class ChatController
 
         Logger::info('Chat message received', [
             'identity'        => $identity->toArray(),
-            'conversation_id' => $conversation !== '' ? $conversation : null,
+            'conversation_id' => $conversationId !== '' ? $conversationId : null,
             'message_length'  => mb_strlen($message, 'UTF-8'),
         ]);
 
-        // Build the retrieval context. Phase 5 hands this to the router along
-        // with the conversation history and returns the generated answer.
-        $context = (new ContextBuilder())->build($message, $identity);
+        try {
+            $engine = new ChatEngine(conversations: $this->conversationStore());
 
-        // ── Phase 5 replaces the response below with the generated answer.
+            $reply = $engine->ask(
+                $message,
+                $identity,
+                $conversationId !== '' ? $conversationId : null,
+                $request->ip
+            );
+        } catch (LlmException $e) {
+            // The message can name providers and internal error types, so it
+            // goes to the log rather than to the customer.
+            Logger::error('Chat generation failed', [
+                'error_type' => $e->errorType,
+                'message'    => $e->getMessage(),
+            ]);
 
-        return Response::error(
-            'Answer generation is not wired up yet. Retrieval is: your message was received, '
-            . 'your identity resolved, and a context block assembled.',
-            501,
-            'not_implemented',
-            [
-                'accepted' => [
-                    'message_length'  => mb_strlen($message, 'UTF-8'),
-                    'conversation_id' => $conversation !== '' ? $conversation : null,
-                    'identity'        => [
-                        // The resolved id is echoed only when it was actually
-                        // proved, so this can never confirm a guessed id.
-                        'customer_id' => $identity->customerId,
-                        'method'      => $identity->method,
-                    ],
-                ],
-                // Metadata only. The context text itself holds account data and
-                // is never returned to the browser.
-                'context' => $context->toArray(),
-            ]
-        )->withHeaders($limit->headers());
+            return Response::error(
+                'Sorry — I could not generate an answer just now. Please try again in a moment, '
+                . 'or open a support ticket if it keeps happening.',
+                503,
+                'generation_failed'
+            )->withHeaders($limit->headers());
+        } catch (Throwable $e) {
+            Logger::error('Unexpected chat failure', [
+                'exception' => $e::class,
+                'message'   => $e->getMessage(),
+            ]);
+
+            return Response::error(
+                'Sorry — something went wrong handling that message.',
+                500,
+                'server_error'
+            )->withHeaders($limit->headers());
+        }
+
+        return Response::ok($reply->toPublicArray())->withHeaders($limit->headers());
+    }
+
+    /**
+     * Conversation persistence is optional: without a working database the
+     * chatbot still answers, it just forgets. Better than refusing to talk.
+     */
+    private function conversationStore(): ?ConversationStore
+    {
+        try {
+            return new ConversationStore();
+        } catch (Throwable $e) {
+            Logger::warning('Conversation storage unavailable; continuing without history', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 }

@@ -54,9 +54,11 @@ abstract class OpenAiCompatibleProvider implements ProviderInterface
 
         // This protocol carries the system prompt as the first message rather
         // than a separate field.
-        $messages = $request->system === ''
-            ? $request->messages
-            : array_merge([['role' => 'system', 'content' => $request->system]], $request->messages);
+        $messages = $this->convertMessages($request->messages);
+
+        if ($request->system !== '') {
+            array_unshift($messages, ['role' => 'system', 'content' => $request->system]);
+        }
 
         $body = [
             'model'    => $this->model(),
@@ -91,6 +93,102 @@ abstract class OpenAiCompatibleProvider implements ProviderInterface
         );
 
         return $this->parse($result['body'], $result['duration_ms']);
+    }
+
+    /**
+     * Translate the neutral message format into this protocol's shape.
+     *
+     * The neutral format matches Anthropic's (content blocks carrying
+     * `tool_use` / `tool_result`), so Claude needs no conversion and this is
+     * where the two protocols actually diverge:
+     *
+     *  - a tool call is a sibling `tool_calls` array rather than a content
+     *    block, and its arguments are a JSON *string* rather than an object;
+     *  - a tool result is its own message with `role: "tool"`, not a block
+     *    inside the following user turn — so one neutral message can expand
+     *    into several here.
+     *
+     * @param array<int, array{role: string, content: string|array<int, array<string, mixed>>}> $messages
+     * @return array<int, array<string, mixed>>
+     */
+    protected function convertMessages(array $messages): array
+    {
+        $converted = [];
+
+        foreach ($messages as $message) {
+            $content = $message['content'];
+
+            if (is_string($content)) {
+                $converted[] = ['role' => $message['role'], 'content' => $content];
+                continue;
+            }
+
+            $text        = [];
+            $toolCalls   = [];
+            $toolResults = [];
+
+            foreach ($content as $block) {
+                if (!is_array($block)) {
+                    continue;
+                }
+
+                switch ($block['type'] ?? '') {
+                    case 'text':
+                        if (is_string($block['text'] ?? null)) {
+                            $text[] = $block['text'];
+                        }
+                        break;
+
+                    case 'tool_use':
+                        $toolCalls[] = [
+                            'id'       => (string) ($block['id'] ?? ''),
+                            'type'     => 'function',
+                            'function' => [
+                                'name'      => (string) ($block['name'] ?? ''),
+                                'arguments' => json_encode(
+                                    is_array($block['input'] ?? null) ? $block['input'] : [],
+                                    JSON_UNESCAPED_SLASHES
+                                ),
+                            ],
+                        ];
+                        break;
+
+                    case 'tool_result':
+                        $toolResults[] = [
+                            'role'         => 'tool',
+                            'tool_call_id' => (string) ($block['tool_use_id'] ?? ''),
+                            'content'      => is_string($block['content'] ?? null)
+                                ? $block['content']
+                                : json_encode($block['content'] ?? '', JSON_UNESCAPED_SLASHES),
+                        ];
+                        break;
+                }
+            }
+
+            if ($toolResults !== []) {
+                // Tool results replace the turn entirely in this protocol.
+                foreach ($toolResults as $result) {
+                    $converted[] = $result;
+                }
+
+                continue;
+            }
+
+            $entry = ['role' => $message['role']];
+
+            $joined = implode("\n", $text);
+
+            // An assistant turn that is only tool calls carries null content.
+            $entry['content'] = ($joined === '' && $toolCalls !== []) ? null : $joined;
+
+            if ($toolCalls !== []) {
+                $entry['tool_calls'] = $toolCalls;
+            }
+
+            $converted[] = $entry;
+        }
+
+        return $converted;
     }
 
     /**

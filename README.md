@@ -10,11 +10,10 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 4 complete — Retrieval & Context Building
+## Status: Phase 5 complete — the backend chat API works
 
-Everything up to the prompt is built: given a question and a verified customer,
-the system produces a complete context block. The chat endpoint returns `501`
-because only answer *generation* is left — that is Phase 5.
+`POST /api/chat` now returns real, knowledge-grounded, cost-routed answers.
+What remains is the browser widget and the admin panel.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -22,7 +21,7 @@ because only answer *generation* is left — that is Phase 5.
 | 2 | Multi-LLM routing engine (Claude / DeepSeek / GPT) | **Done** |
 | 3 | RAG — knowledge ingestion (WordPress + WHMCS + manual notes) | **Done** |
 | 4 | RAG — retrieval & context building | **Done** |
-| 5 | Chat engine integration | Not started |
+| 5 | Chat engine integration | **Done** |
 | 6 | Frontend widget | Not started |
 | 7 | Admin panel | Not started |
 | 8 | Testing & hardening | Not started |
@@ -295,13 +294,86 @@ that retrieved content is data, not instructions.
 
 ---
 
+## The chat engine
+
+```bash
+php tools/chat.php "why is my ssl certificate not working?"
+php tools/chat.php --customer=42 "is my site suspended?"
+php tools/chat.php --interactive --customer=42
+```
+
+One request runs: resolve identity → load history → classify → build context →
+call the model → service any tool calls → persist both turns.
+
+**Conversation memory** is per-thread and ownership-checked. A verified customer
+can resume only their own threads; an anonymous visitor only threads from their
+own client key. A failed check silently starts a *new* conversation rather than
+erroring — the customer gets a working chat, and the attempt is logged. History
+costs money (every replayed turn is re-billed), so `CHAT_HISTORY_TURNS` caps it
+at 10 by default.
+
+### Tools, and the three gates in front of them
+
+The model can look things up and — once you wire an executor — take actions.
+Because these touch live customer infrastructure, every call passes three gates:
+
+1. **Verified identity.** Anonymous visitors are offered *no tools at all*. This
+   is the strongest defence against a prompt injection in retrieved content:
+   there is nothing for it to invoke.
+2. **Proven ownership.** The model picks the domain from conversation text, and
+   a model can hallucinate one. Every handler re-resolves it against the
+   caller's own service list, so a wrong or hostile guess simply fails.
+3. **Explicit confirmation.** Destructive tools return "not done yet — ask the
+   customer first" until called again with `confirmed=true`. Only a real boolean
+   counts; the string `"true"` and integer `1` do not. *"How do I reset my
+   password"* is a question, not consent.
+
+Every invocation is audited to `hoai_tool_invocations` — including denials and
+errors. When a customer asks why their password changed, "the chatbot did it" is
+not an answer; the audit row is.
+
+### Destructive actions ship disabled, and refuse honestly
+
+`reset_hosting_password` and `restart_hosting_service` are **off by default**.
+Turning on `CHAT_ENABLE_ACTIONS` is not enough on its own — you must also
+implement `ActionExecutorInterface` against your own WHM/cPanel API.
+
+Until you do, they refuse and say so. That is deliberate: a chatbot that
+confidently tells a customer their password has been reset when nothing happened
+costs more trust than one that says the feature isn't enabled. No generic
+implementation can know how your estate is wired, so this project does not
+pretend to have one.
+
+### Response shape
+
+```json
+{
+  "ok": true,
+  "answer": "Your service is suspended because invoice #1234 is overdue…",
+  "conversation_id": "a1b2c3…",
+  "sources": ["[1] Renewing your SSL certificate"],
+  "actions": [{"name": "check_service_status", "outcome": "ok"}],
+  "truncated": false
+}
+```
+
+Cost, tokens, provider and model are **not** in the public response — those are
+operator metrics, and a customer-facing endpoint should not publish what each
+answer costs. They are recorded in the database for the admin panel.
+
+The endpoint degrades rather than failing: no knowledge base still answers from
+account context, and a database outage costs the customer their history, not
+their answer.
+
+---
+
 ## Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET`  | `/health` | Liveness probe. Reveals nothing about the install. |
 | `GET`  | `/api/health/diagnostics` | Full diagnostics. **Guarded** — see below. |
-| `POST` | `/api/chat` | Chat endpoint. Returns `501` until Phase 5. |
+| `POST` | `/api/chat` | Chat endpoint. Returns a grounded answer. |
 
 Diagnostics are reachable only when `APP_DEBUG=true`, or with a bearer token
 matching `ADMIN_PASSWORD_HASH`. With neither set it returns `404` — it names

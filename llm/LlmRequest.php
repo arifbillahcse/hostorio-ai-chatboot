@@ -56,8 +56,12 @@ final class LlmRequest
      * conversation fails locally with a clear message instead of costing a
      * round trip and returning an opaque 400.
      *
-     * @param array<int, array{role: string, content: string}> $messages
-     * @return array<int, array{role: string, content: string}>
+     * Content may be a plain string or an array of blocks. Blocks are needed
+     * for the tool loop, where an assistant turn carries `tool_use` and the
+     * following user turn carries the matching `tool_result`.
+     *
+     * @param array<int, array{role: string, content: string|array<int, array<string, mixed>>}> $messages
+     * @return array<int, array{role: string, content: string|array<int, array<string, mixed>>}>
      */
     private static function validateMessages(array $messages): array
     {
@@ -79,8 +83,22 @@ final class LlmRequest
                 );
             }
 
-            if (!isset($message['content']) || !is_string($message['content'])) {
-                throw new InvalidArgumentException(sprintf('Message %d has no string content.', $index));
+            $content = $message['content'] ?? null;
+
+            if (!is_string($content) && !is_array($content)) {
+                throw new InvalidArgumentException(
+                    sprintf('Message %d content must be a string or an array of blocks.', $index)
+                );
+            }
+
+            if (is_array($content)) {
+                if ($content === []) {
+                    throw new InvalidArgumentException(
+                        sprintf('Message %d has an empty content block list.', $index)
+                    );
+                }
+
+                self::validateBlocks($content, $index);
             }
 
             if ($index === 0 && $role !== 'user') {
@@ -99,6 +117,95 @@ final class LlmRequest
         return $messages;
     }
 
+    /**
+     * Check that content blocks are well formed.
+     *
+     * Worth doing locally: a malformed block reaches the provider as an opaque
+     * 400 that says nothing about which message was wrong, and the tool loop
+     * builds these programmatically where a shape bug is easy to introduce.
+     *
+     * @param array<int, mixed> $blocks
+     */
+    private static function validateBlocks(array $blocks, int $messageIndex): void
+    {
+        $known = ['text', 'tool_use', 'tool_result', 'thinking', 'image'];
+
+        foreach ($blocks as $position => $block) {
+            if (!is_array($block)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Message %d, block %s: content blocks must be arrays, got %s.',
+                    $messageIndex,
+                    (string) $position,
+                    get_debug_type($block)
+                ));
+            }
+
+            $type = $block['type'] ?? null;
+
+            if (!is_string($type) || $type === '') {
+                throw new InvalidArgumentException(sprintf(
+                    'Message %d, block %s: every content block needs a string "type".',
+                    $messageIndex,
+                    (string) $position
+                ));
+            }
+
+            if (!in_array($type, $known, true)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Message %d, block %s: unknown block type "%s". Expected one of: %s.',
+                    $messageIndex,
+                    (string) $position,
+                    $type,
+                    implode(', ', $known)
+                ));
+            }
+
+            // The pairing the tool loop depends on: a tool_result must name the
+            // tool_use it answers, or the provider rejects the whole turn.
+            if ($type === 'tool_use' && !is_string($block['id'] ?? null)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Message %d, block %s: a tool_use block needs a string "id".',
+                    $messageIndex,
+                    (string) $position
+                ));
+            }
+
+            if ($type === 'tool_result' && !is_string($block['tool_use_id'] ?? null)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Message %d, block %s: a tool_result block needs a string "tool_use_id".',
+                    $messageIndex,
+                    (string) $position
+                ));
+            }
+        }
+    }
+
+    /**
+     * Flatten a message's content to plain text, for logging and estimation.
+     *
+     * @param string|array<int, array<string, mixed>> $content
+     */
+    public static function contentToText(string|array $content): string
+    {
+        if (is_string($content)) {
+            return $content;
+        }
+
+        $parts = [];
+
+        foreach ($content as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+
+            if (($block['type'] ?? '') === 'text' && is_string($block['text'] ?? null)) {
+                $parts[] = $block['text'];
+            }
+        }
+
+        return implode("\n", $parts);
+    }
+
     public function requiresTools(): bool
     {
         return $this->tools !== [];
@@ -112,7 +219,7 @@ final class LlmRequest
     {
         for ($i = count($this->messages) - 1; $i >= 0; $i--) {
             if ($this->messages[$i]['role'] === 'user') {
-                return $this->messages[$i]['content'];
+                return self::contentToText($this->messages[$i]['content']);
             }
         }
 
@@ -129,7 +236,7 @@ final class LlmRequest
         $characters = mb_strlen($this->system, 'UTF-8');
 
         foreach ($this->messages as $message) {
-            $characters += mb_strlen($message['content'], 'UTF-8');
+            $characters += mb_strlen(self::contentToText($message['content']), 'UTF-8');
         }
 
         return (int) ceil($characters / 4);

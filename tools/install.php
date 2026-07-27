@@ -36,7 +36,7 @@ if (!$db->isConfigured()) {
  * EXISTS or an idempotent upsert, so re-running the installer is safe and is
  * how an existing install picks up a later phase's tables.
  */
-$schemaFiles = ['install.sql', 'phase3.sql'];
+$schemaFiles = ['install.sql', 'phase3.sql', 'phase5.sql'];
 
 $prefix = $db->prefix();
 
