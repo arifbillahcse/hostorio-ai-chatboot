@@ -31,41 +31,52 @@ if (!$db->isConfigured()) {
     exit(1);
 }
 
-$schemaFile = HOAI_ROOT . '/database/schema/install.sql';
+/*
+ * Schema files are applied in order. Every statement is CREATE TABLE IF NOT
+ * EXISTS or an idempotent upsert, so re-running the installer is safe and is
+ * how an existing install picks up a later phase's tables.
+ */
+$schemaFiles = ['install.sql', 'phase3.sql'];
 
-if (!is_readable($schemaFile)) {
-    fwrite(STDERR, "Error: schema file not found at {$schemaFile}\n");
-    exit(1);
-}
-
-$sql = (string) file_get_contents($schemaFile);
-
-// Re-prefix the shipped table names to whatever DB_PREFIX is set to.
 $prefix = $db->prefix();
-
-if ($prefix !== 'hoai_') {
-    $sql = str_replace('`hoai_', '`' . $prefix, $sql);
-}
 
 echo "Installing schema into `" . Config::get('database.app.name') . "` with prefix `{$prefix}`…\n";
 
-// Split on semicolons at end of line — sufficient for this schema, which
-// contains no stored routines or semicolons inside string literals.
-$statements = array_filter(
-    array_map('trim', preg_split('/;\s*[\r\n]+/', $sql) ?: []),
-    static fn (string $s): bool => $s !== '' && !str_starts_with($s, '--')
-);
-
 $applied = 0;
 
-foreach ($statements as $statement) {
-    try {
-        $db->execute($statement);
-        $applied++;
-    } catch (Throwable $e) {
-        fwrite(STDERR, "Failed on statement " . ($applied + 1) . ": " . $e->getMessage() . "\n");
+foreach ($schemaFiles as $name) {
+    $schemaFile = HOAI_ROOT . '/database/schema/' . $name;
+
+    if (!is_readable($schemaFile)) {
+        fwrite(STDERR, "Error: schema file not found at {$schemaFile}\n");
         exit(1);
     }
+
+    $sql = (string) file_get_contents($schemaFile);
+
+    // Re-prefix the shipped table names to whatever DB_PREFIX is set to.
+    if ($prefix !== 'hoai_') {
+        $sql = str_replace('`hoai_', '`' . $prefix, $sql);
+    }
+
+    // Split on semicolons at end of line — sufficient for these schemas, which
+    // contain no stored routines or semicolons inside string literals.
+    $statements = array_filter(
+        array_map('trim', preg_split('/;\s*[\r\n]+/', $sql) ?: []),
+        static fn (string $s): bool => $s !== '' && !str_starts_with($s, '--')
+    );
+
+    foreach ($statements as $statement) {
+        try {
+            $db->execute($statement);
+            $applied++;
+        } catch (Throwable $e) {
+            fwrite(STDERR, "Failed in {$name}: " . $e->getMessage() . "\n");
+            exit(1);
+        }
+    }
+
+    echo "  applied {$name}\n";
 }
 
 echo "Applied {$applied} statement(s).\n";

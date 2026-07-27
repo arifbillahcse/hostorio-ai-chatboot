@@ -10,17 +10,16 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 2 complete — Multi-LLM Routing Engine
+## Status: Phase 3 complete — Knowledge Ingestion
 
-The foundation and the model-routing engine are in place and verified. The
-chat *endpoint* is still `501` — wiring the router into it is Phase 5, once
-there is knowledge to ground answers in.
+The foundation, the model router, and the knowledge base are in place. The chat
+*endpoint* is still `501` — joining retrieval to the router is Phase 4/5.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Foundation & architecture | **Done** |
 | 2 | Multi-LLM routing engine (Claude / DeepSeek / GPT) | **Done** |
-| 3 | RAG — knowledge ingestion (WordPress + WHMCS + manual notes) | Not started |
+| 3 | RAG — knowledge ingestion (WordPress + WHMCS + manual notes) | **Done** |
 | 4 | RAG — retrieval & context building | Not started |
 | 5 | Chat engine integration | Not started |
 | 6 | Frontend widget | Not started |
@@ -159,6 +158,63 @@ definitions — otherwise the model would answer in prose and the action would
 silently never happen.
 
 Rules live in `config/routing.php` and are editable without touching code.
+
+---
+
+## The knowledge base
+
+Three sources, all treated as first-class:
+
+| Source | What it holds | How it is used |
+|---|---|---|
+| **WordPress** | Published posts, pages, custom post types | Synced, chunked, searchable |
+| **Manual notes** | Whatever you type in — outages, promos, policy changes | Same path as WordPress, **higher priority** |
+| **WHMCS** | Customer, services, tickets, invoices | Structured, fetched live per customer — **never embedded** |
+
+Manual notes exist because the website is always behind. An outage started
+twenty minutes ago, a promo runs until Friday, a policy changed this morning —
+none of that is a published article, and all of it is what customers are asking
+about right now. Notes default to priority 10 against an article's 0, so a note
+saying "Frankfurt is down" outranks a guide saying everything is fine.
+
+WHMCS data is deliberately **not** embedded. It is small, per-customer, and
+changes by the minute; embedding it would be expensive, instantly stale, and
+would leak one customer's details into another's search results.
+
+### Managing it
+
+```bash
+php tools/kb.php index                     # sync WordPress, index what changed
+php tools/kb.php status                    # what is indexed, what is pending
+php tools/kb.php search "ssl not working"  # exactly what the chatbot would retrieve
+
+php tools/kb.php note:add "Frankfurt outage" "DC3 is offline until 14:00 UTC." --expires="+6 hours"
+php tools/kb.php note:list
+php tools/kb.php note:edit 4 --body="Resolved at 13:20 UTC." --priority=20
+php tools/kb.php note:expire 4             # reversible; drops out of search immediately
+```
+
+Re-indexing is driven by content hashes, so a sync that finds nothing edited
+performs **no embedding calls at all**. Running it nightly from cron costs
+nothing when nobody touched the docs.
+
+### Embeddings are optional
+
+**Anthropic has no embeddings endpoint**, so semantic search needs a key from a
+provider that does. Rather than force you to sign up for another API, the
+default is `EMBEDDING_DRIVER=none`: retrieval runs on MySQL full-text search
+alone.
+
+That is a real production mode, not a stub. A hosting FAQ is a small corpus
+where customers use the same vocabulary as the docs — "SSL", "cPanel",
+"nameserver" — which is exactly where keyword search performs well.
+
+Set `EMBEDDING_DRIVER=openai` and an `EMBEDDING_API_KEY` to upgrade to hybrid
+search (full-text selects candidates, vectors re-rank them). The schema and the
+indexer are identical either way, so you can switch later without rebuilding.
+
+Vectors are stored as packed float32 BLOBs — a 1536-dimension vector costs 6 KB
+instead of ~20 KB as JSON, which matters against a shared-hosting disk quota.
 
 ---
 
