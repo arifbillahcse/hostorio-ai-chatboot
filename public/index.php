@@ -20,11 +20,23 @@ declare(strict_types=1);
 if (PHP_SAPI === 'cli-server') {
     $requested = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
 
-    if (is_string($requested) && !str_ends_with(strtolower($requested), '.php')) {
-        $candidate = __DIR__ . '/' . ltrim($requested, '/');
+    if (is_string($requested)) {
+        $lower = strtolower($requested);
 
-        if (is_file($candidate)) {
-            return false;
+        // The installer is a real page, not an application route — Apache
+        // serves it directly and the built-in server must do the same.
+        if ($lower === '/install.php' && is_file(__DIR__ . '/install.php')) {
+            require __DIR__ . '/install.php';
+
+            return;
+        }
+
+        if (!str_ends_with($lower, '.php')) {
+            $candidate = __DIR__ . '/' . ltrim($requested, '/');
+
+            if (is_file($candidate)) {
+                return false;
+            }
         }
     }
 }

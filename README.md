@@ -10,11 +10,11 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 7 complete — manageable without touching code
+## Status: complete — all nine phases done
 
-The chatbot works end to end and can now be run from a browser: monitor spend,
-read conversations, write notes, change routing and rotate API keys. What
-remains is hardening and packaging.
+A distributable AI support chatbot for hosting companies. Raw PHP, installs on
+ordinary cPanel shared hosting by upload alone — no Composer, no npm, no build
+step, no VPS.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -25,6 +25,56 @@ remains is hardening and packaging.
 | 5 | Chat engine integration | **Done** |
 | 6 | Frontend widget | **Done** |
 | 7 | Admin panel | **Done** |
+| 8 | Testing & hardening | **Done** |
+| 9 | Packaging & distribution | **Done** |
+
+**Documentation:** [Install](docs/INSTALL.md) · [Admin guide](docs/ADMIN.md) ·
+[Troubleshooting](docs/TROUBLESHOOTING.md)
+
+---
+
+## Shipping it to customers
+
+```bash
+php tools/package.php --manifest     # build dist/ai-support-chatbot-<version>.zip
+```
+
+The customer uploads the zip through cPanel's File Manager, extracts it, and
+opens `/install.php`. That asks for database credentials, one API key and an
+admin password, creates the tables, writes `.env`, and tells them to delete the
+installer.
+
+The installer refuses to run once a configuration file with a database name
+exists, and `tools/security-check.php` reports it as **critical** until it is
+removed.
+
+### Updates
+
+```bash
+php tools/update.php --check      # is a newer version available?
+php tools/update.php --apply      # download, verify, install, migrate
+php tools/update.php --rollback   # undo it
+```
+
+Self-updating code is dangerous, so three rules are enforced: the manifest must
+be **HTTPS with certificate verification**, the download is **verified against a
+SHA-256** before anything executes, and the current version is **backed up
+before any file is replaced**. `.env` and `storage/` are never touched.
+
+Migrations run after files are in place and record their version one step at a
+time, so an update interrupted by a shared-host timeout can be finished with
+`--migrate` rather than restarted.
+
+### Before handing it over
+
+```bash
+php tools/security-check.php
+```
+
+Exits non-zero on anything critical, so it can gate a deployment. It audits what
+is wrong about a *particular install* — debug left on, a weak `APP_KEY`, a
+world-readable `.env`, wildcard CORS, disabled rate limiting, a leftover
+installer, and whether the WordPress/WHMCS MySQL users really are SELECT-only.
 | 8 | Testing & hardening | Not started |
 | 9 | Packaging & distribution | Not started |
 

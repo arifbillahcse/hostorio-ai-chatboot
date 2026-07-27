@@ -155,6 +155,18 @@ if ($missingGuards !== []) {
     result('ok', 'Directory access guards are present');
 }
 
+/*
+ * The installer is the single most dangerous file that can be left behind: it
+ * writes configuration and creates tables. It refuses to run once .env has a
+ * database name, but that is a guard, not a reason to keep it.
+ */
+if (is_file(HOAI_ROOT . '/public/install.php')) {
+    result('critical', 'public/install.php is still present',
+        'Delete it. It can rewrite configuration and create database tables.');
+} else {
+    result('ok', 'Installer has been removed');
+}
+
 $logDir = (string) Config::get('logging.path', '');
 
 if ($logDir !== '' && str_starts_with($logDir, HOAI_ROOT . '/storage')) {

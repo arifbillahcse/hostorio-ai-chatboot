@@ -19,3 +19,6 @@ Thumbs.db
 # Dependencies (not used — raw PHP, but guard anyway)
 vendor/
 node_modules/
+
+# Build artefacts
+dist/

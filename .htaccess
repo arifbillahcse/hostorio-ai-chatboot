@@ -17,6 +17,12 @@
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
+    # The installer lives in public/ but is documented at /install.php, so it
+    # has to resolve whether the document root is this directory or public/.
+    # Placed before the denials so it is reachable, and it removes itself from
+    # the equation by refusing to run once .env has a database name.
+    RewriteRule ^install\.php$ public/install.php [L]
+
     # Block direct access to application directories.
     RewriteRule ^(chat|config|context|core|database|knowledge|llm|storage|tools)/ - [F,L]
 
