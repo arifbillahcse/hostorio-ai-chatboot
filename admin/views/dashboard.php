@@ -17,6 +17,23 @@ foreach ($days as $d) {
     $maxDayCost = max($maxDayCost, (float) $d['cost']);
 }
 ?>
+<?php if (($budget['status'] ?? 'ok') !== 'ok'): ?>
+    <div class="alert <?= ($budget['status'] === 'exceeded') ? 'error' : '' ?>"
+         style="<?= ($budget['status'] === 'exceeded') ? '' : 'background:#fffbeb;border:1px solid #fde68a;color:#92400e' ?>">
+        <strong><?= $budget['status'] === 'exceeded' ? 'Spending budget exceeded' : 'Approaching the spending budget' ?></strong>
+        <?php foreach (($budget['reasons'] ?? []) as $reason): ?>
+            <div><?= $e($reason) ?></div>
+        <?php endforeach; ?>
+        <?php if (!empty($budget['blocked'])): ?>
+            <div><strong>New requests are being refused</strong> because the hard stop is enabled.</div>
+        <?php else: ?>
+            <div class="muted" style="font-size:13px">
+                Requests are still being answered. Enable COST_HARD_STOP to refuse them instead.
+            </div>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
 <div class="grid">
     <div class="stat">
         <div class="label">Spend (30 days)</div>

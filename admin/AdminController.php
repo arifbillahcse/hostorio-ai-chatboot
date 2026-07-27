@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hostorio\Admin;
 
 use Hostorio\Core\Config;
+use Hostorio\Core\CostGuard;
 use Hostorio\Core\Logger;
 use Hostorio\Core\Request;
 use Hostorio\Core\Response;
@@ -155,10 +156,19 @@ final class AdminController
     {
         $metrics = new Metrics();
 
+        $budget = ['status' => 'ok', 'reasons' => [], 'hourly' => [], 'daily' => [], 'blocked' => false];
+
+        try {
+            $budget = CostGuard::check();
+        } catch (Throwable $e) {
+            Logger::warning('Could not evaluate spend budgets', ['error' => $e->getMessage()]);
+        }
+
         return [
             'title'     => 'Dashboard',
             'template'  => 'dashboard',
             'active'    => '',
+            'budget'    => $budget,
             'summary'   => $metrics->summary(30),
             'providers' => $metrics->byProvider(30),
             'days'      => $metrics->byDay(14),
@@ -291,8 +301,59 @@ final class AdminController
                 'deepseek' => ['label' => 'DeepSeek',           'key' => 'providers.deepseek'],
                 'openai'   => ['label' => 'OpenAI',             'key' => 'providers.openai'],
             ],
-            'config'    => Config::all(),
+            'config'    => $this->safeSettingsConfig(),
         ];
+    }
+
+    /**
+     * The configuration values the settings page may see.
+     *
+     * Deliberately not Config::all(). That array holds every provider API key
+     * *and* the database passwords, and putting it in template scope means one
+     * careless `<?= json_encode($config) ?>` — or a debugging dump left in —
+     * publishes the lot to whoever loads the page. Secrets are reduced to a
+     * boolean here, so the value cannot be rendered even by accident.
+     *
+     * @return array<string, mixed>
+     */
+    private function safeSettingsConfig(): array
+    {
+        $config = [];
+
+        foreach (SettingsStore::editablePaths() as $path) {
+            $value = Config::get($path);
+
+            if (SettingsStore::isSecret($path)) {
+                // Only "is one set?" ever reaches the browser.
+                $value = is_string($value) && $value !== '' ? '__set__' : '';
+            }
+
+            $this->assign($config, $path, $value);
+        }
+
+        return $config;
+    }
+
+    /**
+     * @param array<string, mixed> $target
+     */
+    private function assign(array &$target, string $path, mixed $value): void
+    {
+        $segments = explode('.', $path);
+        $cursor   = &$target;
+
+        foreach ($segments as $index => $segment) {
+            if ($index === count($segments) - 1) {
+                $cursor[$segment] = $value;
+                break;
+            }
+
+            if (!isset($cursor[$segment]) || !is_array($cursor[$segment])) {
+                $cursor[$segment] = [];
+            }
+
+            $cursor = &$cursor[$segment];
+        }
     }
 
     /**

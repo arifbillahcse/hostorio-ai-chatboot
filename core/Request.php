@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hostorio\Core;
 
+
 /**
  * Immutable view of the incoming HTTP request.
  *
@@ -95,6 +96,17 @@ final class Request
     }
 
     /**
+     * Largest JSON body accepted, in bytes.
+     *
+     * A chat message is capped at a few thousand characters, so anything near
+     * this is either a mistake or an attempt to exhaust memory. Rejecting on
+     * Content-Length avoids reading the body at all — on shared hosting the
+     * memory limit is low and one large request can take down the whole account,
+     * not just this endpoint.
+     */
+    public const MAX_BODY_BYTES = 65536;
+
+    /**
      * @return array<string, mixed>
      */
     private static function parseBody(): array
@@ -102,9 +114,30 @@ final class Request
         $contentType = strtolower($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '');
 
         if (str_contains($contentType, 'application/json')) {
-            $raw = file_get_contents('php://input');
+            $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+
+            if ($declared > self::MAX_BODY_BYTES) {
+                Logger::warning('Rejected oversized request body', [
+                    'declared_bytes' => $declared,
+                    'limit'          => self::MAX_BODY_BYTES,
+                ]);
+
+                return [];
+            }
+
+            // Read at most the limit even when Content-Length is absent or lies,
+            // which is the case for chunked transfer encoding.
+            $raw = file_get_contents('php://input', false, null, 0, self::MAX_BODY_BYTES + 1);
 
             if ($raw === false || $raw === '') {
+                return [];
+            }
+
+            if (strlen($raw) > self::MAX_BODY_BYTES) {
+                Logger::warning('Rejected oversized request body (undeclared length)', [
+                    'limit' => self::MAX_BODY_BYTES,
+                ]);
+
                 return [];
             }
 

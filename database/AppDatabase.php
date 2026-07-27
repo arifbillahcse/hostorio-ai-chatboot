@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hostorio\Database;
 
 use Hostorio\Core\Config;
+use RuntimeException;
 
 /**
  * The chatbot's own database — the only connection with write access.
@@ -23,6 +24,20 @@ final class AppDatabase extends Connection
 
     private string $prefix;
 
+    /**
+     * @param array{host?:string,port?:int,name?:string,user?:string,pass?:string,charset?:string,prefix?:string} $config
+     */
+    public function __construct(array $config)
+    {
+        parent::__construct($config);
+
+        // Set here rather than by the factory below: leaving a typed property
+        // uninitialised meant that constructing this class directly — which the
+        // public constructor invites — threw on the first table() call instead
+        // of simply working.
+        $this->prefix = (string) ($config['prefix'] ?? 'hoai_');
+    }
+
     public static function instance(): self
     {
         if (self::$instance === null) {
@@ -30,7 +45,6 @@ final class AppDatabase extends Connection
             $config = Config::get('database.app', []);
 
             self::$instance = new self($config);
-            self::$instance->prefix = (string) ($config['prefix'] ?? 'hoai_');
         }
 
         return self::$instance;
@@ -56,7 +70,26 @@ final class AppDatabase extends Connection
      */
     public function insert(string $table, array $data): int
     {
-        $columns      = array_keys($data);
+        $columns = array_keys($data);
+
+        /*
+         * Column names are the one part of a prepared statement that cannot be
+         * parameterised — they are concatenated into the SQL. Every caller
+         * today passes literal keys, but this method is a public API and a
+         * future caller building `$data` from request input would turn that
+         * into injection. Rejecting anything that is not a plain identifier
+         * costs nothing and removes the whole class of mistake.
+         */
+        foreach ($columns as $column) {
+            if (!is_string($column) || preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $column) !== 1) {
+                throw new RuntimeException(sprintf(
+                    'Invalid column name "%s" in insert into %s.',
+                    is_scalar($column) ? (string) $column : get_debug_type($column),
+                    $table
+                ));
+            }
+        }
+
         $placeholders = array_map(static fn (string $c): string => ':' . $c, $columns);
 
         $sql = sprintf(

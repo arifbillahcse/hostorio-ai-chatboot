@@ -9,6 +9,7 @@ use Hostorio\Chat\Tools\ToolResult;
 use Hostorio\Context\ContextBuilder;
 use Hostorio\Context\CustomerIdentity;
 use Hostorio\Core\Config;
+use Hostorio\Core\CostGuard;
 use Hostorio\Core\Logger;
 use Hostorio\Llm\Classification;
 use Hostorio\Llm\LlmException;
@@ -74,6 +75,21 @@ final class ChatEngine
         ?string $conversationPublicId = null,
         string $clientIp = ''
     ): ChatReply {
+        /*
+         * Check spend before doing any work. Placed here rather than after
+         * retrieval so a runaway does not keep paying for embeddings and
+         * database reads on requests that will be refused anyway.
+         */
+        if (CostGuard::shouldBlock()) {
+            throw new LlmException(
+                'Spending limit reached; refusing new requests.',
+                'cost-guard',
+                0,
+                'budget_exceeded',
+                false
+            );
+        }
+
         $conversationId = null;
         $publicId       = null;
         $history        = [];
