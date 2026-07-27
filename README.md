@@ -10,11 +10,38 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: complete — all nine phases done
+An AI support assistant for web hosting companies. It answers customer questions
+from **your own documentation**, with the customer's **real account state**
+attached, at roughly **half a cent per answer**.
 
-A distributable AI support chatbot for hosting companies. Raw PHP, installs on
-ordinary cPanel shared hosting by upload alone — no Composer, no npm, no build
-step, no VPS.
+Raw PHP. Installs on ordinary cPanel shared hosting by upload alone — no
+Composer, no npm, no build step, no VPS.
+
+```html
+<script src="https://support.example.com/widget/widget.js" defer></script>
+```
+
+> **New here?** [**docs/FEATURES.md**](docs/FEATURES.md) is the guide to what it
+> does, what it is for, worked cost examples, and the boundaries it deliberately
+> keeps. This README covers architecture and design decisions.
+
+### At a glance
+
+| | |
+|---|---|
+| **Answers from** | Your WordPress content, manual notes you type in, and live WHMCS account data |
+| **Costs** | ~$5 per 1,000 answered questions on the default routing ([worked example](docs/FEATURES.md#what-it-costs)) |
+| **Runs on** | PHP 8.1+ and MySQL — the hosting you already sell |
+| **Setup** | Upload a zip, open `/install.php`, about two minutes |
+| **Managed from** | A browser admin panel at `/admin` — no code |
+
+**Documentation:** [Features & use cases](docs/FEATURES.md) ·
+[Install](docs/INSTALL.md) · [Admin guide](docs/ADMIN.md) ·
+[Troubleshooting](docs/TROUBLESHOOTING.md)
+
+---
+
+## Status: complete — all nine phases done
 
 | Phase | Scope | Status |
 |-------|-------|--------|
@@ -27,9 +54,6 @@ step, no VPS.
 | 7 | Admin panel | **Done** |
 | 8 | Testing & hardening | **Done** |
 | 9 | Packaging & distribution | **Done** |
-
-**Documentation:** [Install](docs/INSTALL.md) · [Admin guide](docs/ADMIN.md) ·
-[Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ---
 
