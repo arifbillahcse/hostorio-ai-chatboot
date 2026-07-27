@@ -23,7 +23,7 @@ use Throwable;
  * key, so they are unreadable over a raw SQL connection by design. Nothing here
  * depends on those; anything that needs them must go through the WHMCS API.
  */
-final class WhmcsContext
+class WhmcsContext
 {
     /** Cap on rows pulled per section, to bound prompt size and query cost. */
     private const MAX_SERVICES = 20;

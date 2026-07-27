@@ -27,7 +27,7 @@ use Throwable;
  * be resumed — the next run picks up whatever is still pending rather than
  * starting over.
  */
-final class Indexer
+class Indexer
 {
     private readonly KnowledgeStore $store;
     private readonly EmbedderInterface $embedder;

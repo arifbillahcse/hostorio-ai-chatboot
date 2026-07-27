@@ -18,7 +18,7 @@
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
     # Block direct access to application directories.
-    RewriteRule ^(config|core|database|knowledge|llm|storage|tools)/ - [F,L]
+    RewriteRule ^(config|context|core|database|knowledge|llm|storage|tools)/ - [F,L]
 
     # Block dotfiles (.env above all).
     RewriteRule (^|/)\.(?!well-known) - [F,L]

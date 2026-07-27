@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hostorio\Api;
 
+use Hostorio\Context\ContextBuilder;
+use Hostorio\Context\CustomerIdentity;
 use Hostorio\Core\Config;
 use Hostorio\Core\Logger;
 use Hostorio\Core\RateLimiter;
@@ -37,17 +39,30 @@ final class ChatController
         }
 
         // Customer id, when the widget is embedded in a logged-in WHMCS area.
-        // Trusted only as a hint in Phase 1; Phase 4 verifies it against a
-        // signed session before any customer data is read.
-        $customerId    = Security::sanitizeId($request->input('customer_id'));
-        $conversation  = Security::sanitizeIdentifier((string) $request->input('conversation_id', ''));
+        $conversation = Security::sanitizeIdentifier((string) $request->input('conversation_id', ''));
 
-        // Rate limit per customer where known, per IP otherwise.
-        $identity = $customerId !== null ? 'customer:' . $customerId : 'ip:' . $request->ip;
-        $limit    = RateLimiter::attempt($identity);
+        /*
+         * Establish who is asking.
+         *
+         * A `customer_id` in the request body is a claim from the browser, not
+         * a fact — trusting it would let anyone read anyone else's services,
+         * tickets and invoices by changing a number. Only a signed token or a
+         * server-side session counts as proof; an unproven claim is logged and
+         * the question is answered without account context.
+         */
+        $identity = CustomerIdentity::fromRequest($request);
+
+        // Rate limit per verified customer where we have one, per IP otherwise.
+        // Deliberately not per *claimed* customer: that would let a caller
+        // sidestep the limit by inventing a new id for each request.
+        $rateKey = $identity->isVerified()
+            ? 'customer:' . $identity->customerId
+            : 'ip:' . $request->ip;
+
+        $limit = RateLimiter::attempt($rateKey);
 
         if (!$limit->allowed) {
-            Logger::warning('Rate limit exceeded', ['identity' => $identity]);
+            Logger::warning('Rate limit exceeded', ['identity' => $rateKey]);
 
             return Response::error(
                 'Too many messages. Please wait a moment and try again.',
@@ -57,26 +72,36 @@ final class ChatController
         }
 
         Logger::info('Chat message received', [
-            'customer_id'     => $customerId,
+            'identity'        => $identity->toArray(),
             'conversation_id' => $conversation !== '' ? $conversation : null,
             'message_length'  => mb_strlen($message, 'UTF-8'),
         ]);
 
-        // ── Phase 2 inserts provider routing here.
-        // ── Phase 4 inserts RAG context building here.
+        // Build the retrieval context. Phase 5 hands this to the router along
+        // with the conversation history and returns the generated answer.
+        $context = (new ContextBuilder())->build($message, $identity);
+
         // ── Phase 5 replaces the response below with the generated answer.
 
         return Response::error(
-            'Chat processing is not built yet. The foundation is working: your message was '
-            . 'received, validated and rate-limited successfully.',
+            'Answer generation is not wired up yet. Retrieval is: your message was received, '
+            . 'your identity resolved, and a context block assembled.',
             501,
             'not_implemented',
             [
                 'accepted' => [
                     'message_length'  => mb_strlen($message, 'UTF-8'),
-                    'customer_id'     => $customerId,
                     'conversation_id' => $conversation !== '' ? $conversation : null,
+                    'identity'        => [
+                        // The resolved id is echoed only when it was actually
+                        // proved, so this can never confirm a guessed id.
+                        'customer_id' => $identity->customerId,
+                        'method'      => $identity->method,
+                    ],
                 ],
+                // Metadata only. The context text itself holds account data and
+                // is never returned to the browser.
+                'context' => $context->toArray(),
             ]
         )->withHeaders($limit->headers());
     }

@@ -1,0 +1,9 @@
+# Deny all direct web access to this directory.
+# Application code is reached through public/index.php only.
+
+Require all denied
+
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
