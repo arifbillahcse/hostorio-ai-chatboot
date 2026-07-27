@@ -31,7 +31,11 @@ return [
         'api_key'        => Env::get('DEEPSEEK_API_KEY', ''),
         'model'          => Env::get('DEEPSEEK_MODEL', 'deepseek-chat'),
         'endpoint'       => 'https://api.deepseek.com/v1/chat/completions',
-        'supports_tools' => false,
+        // DeepSeek implements the OpenAI chat-completions protocol, which is
+        // why it shares an adapter with OpenAI.
+        'supports_tools'       => false,
+        'token_param'          => 'max_tokens',
+        'supports_temperature' => true,
     ],
 
     'openai' => [
@@ -40,5 +44,15 @@ return [
         'model'          => Env::get('OPENAI_MODEL', 'gpt-5-nano'),
         'endpoint'       => 'https://api.openai.com/v1/chat/completions',
         'supports_tools' => true,
+
+        /*
+         * Newer OpenAI models renamed `max_tokens` to `max_completion_tokens`
+         * and reject the old name, and accept only their default temperature.
+         * These two settings exist so that can be corrected from config if the
+         * defaults below are wrong for the model you configure — verify
+         * against OpenAI's current API reference before relying on them.
+         */
+        'token_param'          => 'max_completion_tokens',
+        'supports_temperature' => false,
     ],
 ];

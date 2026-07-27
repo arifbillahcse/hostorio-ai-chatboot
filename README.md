@@ -10,16 +10,16 @@ each question to the cheapest model that can handle it.
 
 ---
 
-## Status: Phase 1 complete — Foundation & Architecture
+## Status: Phase 2 complete — Multi-LLM Routing Engine
 
-The skeleton is in place and verified. There is **no chat logic yet**; the chat
-endpoint accepts, validates and rate-limits a message, then returns `501 Not
-Implemented`. That is the intended Phase 1 deliverable.
+The foundation and the model-routing engine are in place and verified. The
+chat *endpoint* is still `501` — wiring the router into it is Phase 5, once
+there is knowledge to ground answers in.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Foundation & architecture | **Done** |
-| 2 | Multi-LLM routing engine (Claude / DeepSeek / GPT) | Not started |
+| 2 | Multi-LLM routing engine (Claude / DeepSeek / GPT) | **Done** |
 | 3 | RAG — knowledge ingestion (WordPress + WHMCS + manual notes) | Not started |
 | 4 | RAG — retrieval & context building | Not started |
 | 5 | Chat engine integration | Not started |
@@ -97,6 +97,68 @@ FLUSH PRIVILEGES;
 The application enforces read-only access in code as well, so a bug in a later
 phase cannot write to a customer's live billing data even if the MySQL grants
 are too permissive.
+
+---
+
+## The routing engine
+
+Most questions in a hosting support inbox are repetitive and a cheap model
+answers them perfectly well. Only a minority need an expensive one. Routing on
+that split is what makes the chatbot affordable at volume.
+
+Every question is classified, then sent to the cheapest provider that can
+handle it:
+
+| Class | Trigger | Providers, in order | Why |
+|---|---|---|---|
+| `action` | "reset my password", "restart my server" | Claude → OpenAI | Needs reliable tool calling. A fumbled password reset costs a support ticket — far more than the tokens saved. |
+| `complex` | "why…", "not working", error codes, long messages | Claude → DeepSeek → OpenAI | Wrong diagnosis creates the ticket the chatbot existed to prevent. Extended thinking is on. |
+| `simple` | everything else | DeepSeek → OpenAI → Claude | The bulk of the volume, on the cheap model. |
+
+Classification is **rule-based, not model-based**: classifying with an LLM would
+add a billed round trip to every single message — the exact cost this routing
+exists to avoid — and would make routing non-deterministic and hard to audit.
+
+See what it *would* do without spending anything:
+
+```bash
+php tools/ask.php --plan "why is my ssl certificate not working?"
+```
+```
+  classified as        complex
+  because              matched troubleshooting phrase "why"
+  configured order     claude -> deepseek -> openai
+  available now        claude -> deepseek
+  would use            claude
+  model                claude-opus-4-8
+  thinking             on
+```
+
+Then ask for real (needs an API key):
+
+```bash
+php tools/ask.php "how much does a VPS cost?"
+```
+
+In code, one entry point covers it:
+
+```php
+$router   = new Hostorio\Llm\LlmRouter();
+$response = $router->ask('why is my site slow?', $systemPrompt);
+
+$response->text;      // the answer
+$response->provider;  // which model served it
+$response->costUsd;   // estimated spend, already recorded
+```
+
+**Fallback:** transient failures (429, 5xx, network) are retried against the
+same provider with exponential backoff, honouring `Retry-After`. If a provider
+still fails, it is abandoned for that request and the next one in the list is
+tried. Providers that cannot call tools are skipped for requests carrying tool
+definitions — otherwise the model would answer in prose and the action would
+silently never happen.
+
+Rules live in `config/routing.php` and are editable without touching code.
 
 ---
 
