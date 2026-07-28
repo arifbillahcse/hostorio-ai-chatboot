@@ -62,4 +62,16 @@ Options -Indexes
 <IfModule mod_headers.c>
     Header unset X-Powered-By
     Header always set X-Content-Type-Options "nosniff"
+
+    # CORS headers — allow requests from your WordPress site
+    Header always set Access-Control-Allow-Origin "https://hostorio.com"
+    Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, X-Chat-Token"
+    Header always set Access-Control-Max-Age "3600"
+</IfModule>
+
+# Handle preflight requests (OPTIONS)
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_METHOD} OPTIONS
+    RewriteRule ^ - [L]
 </IfModule>
