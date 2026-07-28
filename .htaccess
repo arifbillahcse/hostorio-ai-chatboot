@@ -62,12 +62,23 @@ Options -Indexes
 <IfModule mod_headers.c>
     Header unset X-Powered-By
     Header always set X-Content-Type-Options "nosniff"
+</IfModule>
 
-    # CORS headers — allow requests from your WordPress site
-    Header always set Access-Control-Allow-Origin "https://hostorio.com"
+# CORS — allow only the sites that embed this widget. Apache's Header directive
+# cannot emit more than one static Access-Control-Allow-Origin value, so each
+# allowed origin is matched individually and mirrored back rather than using a
+# wildcard, which would let any site call the API.
+<IfModule mod_setenvif.c>
+    SetEnvIf Origin "^https://hostorio\.com$" CORS_ORIGIN=$0
+    SetEnvIf Origin "^https://my\.hostorio\.com$" CORS_ORIGIN=$0
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set Access-Control-Allow-Origin "%{CORS_ORIGIN}e" env=CORS_ORIGIN
     Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, X-Chat-Token"
     Header always set Access-Control-Max-Age "3600"
+    Header merge Vary Origin
 </IfModule>
 
 # Handle preflight requests (OPTIONS)
