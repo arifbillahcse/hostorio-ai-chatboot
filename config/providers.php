@@ -54,5 +54,20 @@ return [
          */
         'token_param'          => 'max_completion_tokens',
         'supports_temperature' => false,
+
+        /*
+         * Reasoning models (the gpt-5 family) think before answering, and that
+         * thinking is billed as output tokens against `max_completion_tokens`
+         * without ever appearing in the reply. On short support answers that is
+         * mostly waste: it is the dominant cost and the main cause of a reply
+         * that runs out of budget mid-thought.
+         *
+         * Set OPENAI_REASONING_EFFORT to `minimal` (or `low`) to curb it.
+         * Blank by default so the parameter is not sent at all — a model that
+         * does not accept it would reject the whole request, and that must not
+         * be the out-of-the-box behaviour. Check your model supports the
+         * parameter before setting it.
+         */
+        'reasoning_effort' => Env::get('OPENAI_REASONING_EFFORT', ''),
     ],
 ];

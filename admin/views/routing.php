@@ -58,7 +58,12 @@ $descriptions = [
                     <label for="max_tokens_<?= $e($type) ?>">Answer length limit (tokens)</label>
                     <input type="number" id="max_tokens_<?= $e($type) ?>" name="max_tokens_<?= $e($type) ?>"
                            min="64" max="8192" value="<?= $e((int) ($rule['max_tokens'] ?? 1024)) ?>">
-                    <div class="hint">Answers cut off at this length are flagged as incomplete.</div>
+                    <div class="hint">
+                        A ceiling, not a charge — you pay for what is generated, so being generous
+                        costs nothing. Reasoning models (OpenAI's gpt-5 family) bill their thinking
+                        against this too without it appearing in the reply, so too low a value
+                        returns a blank answer. 4096 is a safe floor for those.
+                    </div>
                 </div>
                 <div class="field">
                     <label>Extended thinking</label>

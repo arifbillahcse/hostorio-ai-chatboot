@@ -78,6 +78,15 @@ abstract class OpenAiCompatibleProvider implements ProviderInterface
             $body['temperature'] = $request->temperature;
         }
 
+        // Opt-in, and only sent when explicitly configured: a model that does
+        // not know this parameter rejects the entire request, so an unset value
+        // must mean "say nothing" rather than "send a default".
+        $reasoningEffort = (string) Config::get($this->configPrefix() . '.reasoning_effort', '');
+
+        if ($reasoningEffort !== '') {
+            $body['reasoning_effort'] = $reasoningEffort;
+        }
+
         if ($request->requiresTools()) {
             $body['tools'] = array_map(
                 static fn (ToolDefinition $tool): array => $tool->toOpenAiFormat(),

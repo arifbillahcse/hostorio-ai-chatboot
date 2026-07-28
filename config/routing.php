@@ -19,6 +19,16 @@ return [
      * Provider preference per query type, in order. The router walks the list
      * and uses the first provider that is enabled and capable, so these double
      * as the fallback chain.
+     *
+     * On `max_tokens`: this is a ceiling, not a charge — you pay for what is
+     * actually generated, so a generous limit costs nothing on an ordinary
+     * model. It has to be generous because *reasoning* models (OpenAI's gpt-5
+     * family, and anything else that thinks before it answers) bill their
+     * internal reasoning against this same budget while producing no visible
+     * text. Set it too low and the model spends the entire allowance thinking,
+     * then returns an empty answer with a "length" finish reason — a blank
+     * chat bubble that still costs money. Leave room for the thinking as well
+     * as the reply.
      */
     'rules' => [
         // Anything that changes the customer's account. Tool-calling
@@ -27,7 +37,7 @@ return [
         // more expensive than every token it saved.
         'action' => [
             'providers'  => ['claude', 'openai'],
-            'max_tokens' => 1024,
+            'max_tokens' => 4096,
             'thinking'   => false,
         ],
 
@@ -36,14 +46,14 @@ return [
         // generates the ticket the chatbot existed to prevent.
         'complex' => [
             'providers'  => ['claude', 'deepseek', 'openai'],
-            'max_tokens' => 2048,
+            'max_tokens' => 8192,
             'thinking'   => true,
         ],
 
         // Ordinary questions — the bulk of the volume, on the cheap model.
         'simple' => [
             'providers'  => ['deepseek', 'openai', 'claude'],
-            'max_tokens' => 1024,
+            'max_tokens' => 4096,
             'thinking'   => false,
         ],
     ],

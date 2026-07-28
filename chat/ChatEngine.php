@@ -145,6 +145,40 @@ final class ChatEngine
 
         $outcome = $this->runWithTools($request, $classification, $identity, $conversationId);
 
+        /*
+         * An empty answer is a failure, not an answer.
+         *
+         * Reasoning models bill their thinking against the output budget while
+         * producing no visible text, so a budget that runs out mid-thought
+         * returns success, a "length" stop reason, a real token charge — and
+         * nothing to say. Rendering that verbatim shows the customer a blank
+         * bubble and records it as a good reply, which hides the fault from the
+         * transcripts and the dashboard alike. Better to fail loudly, so the
+         * widget offers a retry and the log names the cause.
+         */
+        if (trim($outcome['response']->text) === '') {
+            Logger::error('Model returned an empty answer', [
+                'provider'      => $outcome['response']->provider,
+                'model'         => $outcome['response']->model,
+                'stop_reason'   => $outcome['response']->stopReason,
+                'truncated'     => $outcome['response']->wasTruncated(),
+                'max_tokens'    => $request->maxTokens,
+                'output_tokens' => $outcome['response']->outputTokens,
+                'query_type'    => $classification->type,
+            ]);
+
+            throw new LlmException(
+                $outcome['response']->wasTruncated()
+                    ? 'The model ran out of output budget before writing an answer. '
+                      . 'Raise max_tokens for this question type in Admin → Routing.'
+                    : 'The model returned an empty answer.',
+                $outcome['response']->provider,
+                0,
+                'empty_response',
+                false
+            );
+        }
+
         $reply = new ChatReply(
             text: $outcome['response']->text,
             conversationId: $publicId,
