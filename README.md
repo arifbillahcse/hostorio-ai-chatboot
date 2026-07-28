@@ -36,8 +36,8 @@ Composer, no npm, no build step, no VPS.
 | **Managed from** | A browser admin panel at `/admin` — no code |
 
 **Documentation:** [Features & use cases](docs/FEATURES.md) ·
-[Install](docs/INSTALL.md) · [Admin guide](docs/ADMIN.md) ·
-[Troubleshooting](docs/TROUBLESHOOTING.md)
+[Install](docs/INSTALL.md) · [Local setup (Laragon, beginners)](docs/LOCAL_SETUP.md) ·
+[Admin guide](docs/ADMIN.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ---
 
