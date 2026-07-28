@@ -4,6 +4,9 @@ This is a complete, from-scratch walkthrough for running Hostorio AI Chatbot on
 your own Windows computer using **Laragon**, a free local server environment.
 No prior PHP or MySQL experience assumed. Follow every step in order.
 
+Using XAMPP instead? See [XAMPP_SETUP.md](XAMPP_SETUP.md) — same steps,
+XAMPP's tools (phpMyAdmin, Control Panel).
+
 If you get stuck, jump to [Troubleshooting](#troubleshooting) at the bottom —
 it covers every problem people commonly hit during this setup.
 
