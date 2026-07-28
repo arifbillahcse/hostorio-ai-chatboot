@@ -95,6 +95,7 @@ final class View
             'knowledge'     => 'Knowledge base',
             'routing'       => 'Routing',
             'settings'      => 'Settings',
+            'diagnostics'   => 'Diagnostics',
         ];
 
         $links = '';

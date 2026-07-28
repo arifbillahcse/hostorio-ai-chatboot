@@ -10,10 +10,14 @@ use Hostorio\Core\Logger;
 use Hostorio\Core\Request;
 use Hostorio\Core\Response;
 use Hostorio\Core\Security;
+use Hostorio\Database\AppDatabase;
+use Hostorio\Database\WhmcsDatabase;
+use Hostorio\Database\WordPressDatabase;
 use Hostorio\Knowledge\Indexer;
 use Hostorio\Knowledge\KnowledgeStore;
 use Hostorio\Knowledge\ManualNotes;
 use Hostorio\Llm\Classification;
+use PDO;
 use Throwable;
 
 /**
@@ -135,6 +139,7 @@ final class AdminController
             'knowledge'     => $this->knowledgeData(),
             'routing'       => $this->routingData(),
             'settings'      => $this->settingsData(),
+            'diagnostics'   => $this->diagnosticsData(),
             default         => ['title' => 'Not found', 'template' => 'notfound', 'active' => ''],
         };
 
@@ -253,6 +258,86 @@ final class AdminController
             'notes'    => $noteRows,
             'runs'     => (new Metrics())->recentIndexRuns(5),
             'embedder' => Indexer::resolveEmbedder()->name(),
+        ];
+    }
+
+    /**
+     * A human-readable version of the diagnostics the API exposes at
+     * /api/health/diagnostics — for an operator who would rather read a page
+     * than a JSON blob or dig through log files after a connection error.
+     *
+     * Every check here is self-guarding (ping()/isInstalled()/looksLike*()
+     * all catch their own exceptions and return false), so a database that is
+     * down or misconfigured degrades this page's status pills, it never
+     * breaks the page itself.
+     *
+     * @return array<string, mixed>
+     */
+    private function diagnosticsData(): array
+    {
+        $app       = AppDatabase::instance();
+        $wordpress = WordPressDatabase::instance();
+        $whmcs     = WhmcsDatabase::instance();
+
+        $describe = static function (string $configPath): array {
+            /** @var array{host?:string,port?:int,name?:string,user?:string,pass?:string} $cfg */
+            $cfg = (array) Config::get($configPath, []);
+
+            return [
+                'host' => (string) ($cfg['host'] ?? ''),
+                'port' => (int) ($cfg['port'] ?? 0),
+                'name' => (string) ($cfg['name'] ?? ''),
+                'user' => (string) ($cfg['user'] ?? ''),
+                // Never the value — only whether one was typed in.
+                'pass_set' => (string) ($cfg['pass'] ?? '') !== '',
+            ];
+        };
+
+        return [
+            'title'    => 'Diagnostics',
+            'template' => 'diagnostics',
+            'active'   => 'diagnostics',
+            'php'      => PHP_VERSION,
+            'extensions' => [
+                'curl'      => function_exists('curl_init'),
+                'pdo_mysql' => in_array('mysql', PDO::getAvailableDrivers(), true),
+                'mbstring'  => extension_loaded('mbstring'),
+            ],
+            'storage' => [
+                'logs'  => is_dir(HOAI_ROOT . '/storage/logs') && is_writable(HOAI_ROOT . '/storage/logs'),
+                'cache' => is_dir(HOAI_ROOT . '/storage/cache') && is_writable(HOAI_ROOT . '/storage/cache'),
+            ],
+            'databases' => [
+                'app' => [
+                    'label'      => 'Application (this chatbot\'s own data)',
+                    'required'   => true,
+                    'configured' => $app->isConfigured(),
+                    'connected'  => $app->isConfigured() && $app->ping(),
+                    'installed'  => $app->isConfigured() && $app->isInstalled(),
+                    'config'     => $describe('database.app'),
+                ],
+                'wordpress' => [
+                    'label'      => 'WordPress (knowledge base source)',
+                    'required'   => false,
+                    'configured' => $wordpress->isConfigured(),
+                    'connected'  => $wordpress->isConfigured() && $wordpress->ping(),
+                    'installed'  => $wordpress->isConfigured() && $wordpress->looksLikeWordPress(),
+                    'config'     => $describe('database.wordpress'),
+                ],
+                'whmcs' => [
+                    'label'      => 'WHMCS (customer account context)',
+                    'required'   => false,
+                    'configured' => $whmcs->isConfigured(),
+                    'connected'  => $whmcs->isConfigured() && $whmcs->ping(),
+                    'installed'  => $whmcs->isConfigured() && $whmcs->looksLikeWhmcs(),
+                    'config'     => $describe('database.whmcs'),
+                ],
+            ],
+            'providers' => [
+                'claude'   => (bool) Config::get('providers.claude.enabled', false),
+                'deepseek' => (bool) Config::get('providers.deepseek.enabled', false),
+                'openai'   => (bool) Config::get('providers.openai.enabled', false),
+            ],
         ];
     }
 
