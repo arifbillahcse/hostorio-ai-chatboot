@@ -1,9 +1,13 @@
-# Deny all direct web access to this directory.
-# Application code is reached through public/index.php only.
+# Deny direct access to PHP files in this directory.
+# All legitimate requests are rewritten to public/index.php by the root .htaccess.
 
-Require all denied
+<FilesMatch "\.php$">
+    Require all denied
+</FilesMatch>
 
 <IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
+    <FilesMatch "\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
 </IfModule>

@@ -1,8 +1,13 @@
-# Deny direct web access. The admin panel is served through public/index.php.
+# Deny direct access to PHP files in this directory.
+# The admin panel is served through public/index.php by the root .htaccess.
 
-Require all denied
+<FilesMatch "\.php$">
+    Require all denied
+</FilesMatch>
 
 <IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
+    <FilesMatch "\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
 </IfModule>
