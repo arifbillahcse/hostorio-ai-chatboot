@@ -96,7 +96,10 @@
     var formData = null;
 
     try {
-        conversationId = window.sessionStorage.getItem(STORAGE_KEY);
+        // localStorage rather than sessionStorage: the conversation, the
+        // pre-chat form answers and the identity token all need to survive
+        // opening the site in a new tab, not just navigating within one.
+        conversationId = window.localStorage.getItem(STORAGE_KEY);
     } catch (e) {
         // Private browsing or a blocked storage partition. The chat still
         // works; it just starts a new thread each page load.
@@ -579,7 +582,7 @@
                 if (result.body.conversation_id) {
                     conversationId = result.body.conversation_id;
                     try {
-                        window.sessionStorage.setItem(STORAGE_KEY, conversationId);
+                        window.localStorage.setItem(STORAGE_KEY, conversationId);
                     } catch (e) { /* storage unavailable; carry on */ }
                 }
 
@@ -676,7 +679,7 @@
 
     function loadFormData() {
         try {
-            var stored = window.sessionStorage.getItem(STORAGE_KEY_FORM);
+            var stored = window.localStorage.getItem(STORAGE_KEY_FORM);
             formData = stored ? JSON.parse(stored) : null;
         } catch (e) {
             formData = null;
@@ -685,7 +688,7 @@
 
     function saveFormData(data) {
         try {
-            window.sessionStorage.setItem(STORAGE_KEY_FORM, JSON.stringify(data));
+            window.localStorage.setItem(STORAGE_KEY_FORM, JSON.stringify(data));
         } catch (e) { /* storage unavailable */ }
         formData = data;
     }
@@ -700,7 +703,7 @@
      */
     function loadStoredToken() {
         try {
-            var stored = window.sessionStorage.getItem(STORAGE_KEY_TOKEN);
+            var stored = window.localStorage.getItem(STORAGE_KEY_TOKEN);
 
             if (!stored) {
                 return;
@@ -712,7 +715,7 @@
             if (parsed && parsed.token && expiresAt > Date.now() / 1000) {
                 settings.token = parsed.token;
             } else {
-                window.sessionStorage.removeItem(STORAGE_KEY_TOKEN);
+                window.localStorage.removeItem(STORAGE_KEY_TOKEN);
             }
         } catch (e) { /* storage unavailable or corrupt; carry on signed out */ }
     }
@@ -721,7 +724,7 @@
         settings.token = token;
 
         try {
-            window.sessionStorage.setItem(STORAGE_KEY_TOKEN, JSON.stringify({
+            window.localStorage.setItem(STORAGE_KEY_TOKEN, JSON.stringify({
                 token: token,
                 expiresAt: Math.floor(Date.now() / 1000) + Number(expiresIn || 0)
             }));
@@ -1118,7 +1121,7 @@
      * Redisplay a resumed conversation's messages after a page navigation.
      *
      * The conversation itself already continues server-side purely from the
-     * id stored in sessionStorage — the model sees the prior turns regardless
+     * id stored in localStorage — the model sees the prior turns regardless
      * of this. What is missing without it is the visible log: without
      * re-rendering, every new page looks like the chat forgot everything,
      * even though it did not.
