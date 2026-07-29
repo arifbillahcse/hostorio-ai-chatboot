@@ -60,19 +60,29 @@ final class WhmcsApiClient
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT        => 8,
+            // Some hosts front their WHMCS install with a WAF/ModSecurity
+            // rule that blocks any request without a User-Agent header —
+            // curl sends none by default, which reads as a bot and gets a
+            // bare 403 before WHMCS's api.php ever runs.
+            CURLOPT_USERAGENT      => 'Hostorio-Chatbot/1.0 (+https://chat.hostorio.com)',
             // Certificate verification is non-negotiable: this request carries
             // a customer's real password.
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
         ]);
 
-        $body   = curl_exec($handle);
-        $status = curl_getinfo($handle, CURLINFO_HTTP_CODE);
-        $failed = curl_errno($handle) !== 0;
+        $body      = curl_exec($handle);
+        $status    = curl_getinfo($handle, CURLINFO_HTTP_CODE);
+        $failed    = curl_errno($handle) !== 0;
+        $curlError = $failed ? curl_error($handle) : null;
         curl_close($handle);
 
         if ($failed || $status !== 200 || !is_string($body)) {
-            Logger::error('WHMCS API unreachable while validating a widget login', ['status' => $status]);
+            Logger::error('WHMCS API unreachable while validating a widget login', [
+                'status'       => $status,
+                'curl_error'   => $curlError,
+                'body_snippet' => is_string($body) ? substr($body, 0, 300) : null,
+            ]);
 
             return ['status' => self::UNAVAILABLE, 'customer_id' => null];
         }
