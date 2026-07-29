@@ -18,16 +18,20 @@ final class RateLimiter
     /**
      * Record a hit and report whether the caller is still within its quota.
      *
-     * @param string $identity stable key for the caller (customer id or IP)
+     * @param string   $identity    stable key for the caller (customer id or IP)
+     * @param int|null $maxRequests override the configured default, e.g. a
+     *                              much tighter budget for an endpoint that
+     *                              checks a real password
+     * @param int|null $window      override the configured window, in seconds
      */
-    public static function attempt(string $identity): RateLimitResult
+    public static function attempt(string $identity, ?int $maxRequests = null, ?int $window = null): RateLimitResult
     {
         if (!Config::get('rate_limit.enabled', true)) {
             return new RateLimitResult(true, 0, 0, 0);
         }
 
-        $maxRequests = max(1, (int) Config::get('rate_limit.max_requests', 20));
-        $windowSize  = max(1, (int) Config::get('rate_limit.window', 60));
+        $maxRequests = max(1, $maxRequests ?? (int) Config::get('rate_limit.max_requests', 20));
+        $windowSize  = max(1, $window ?? (int) Config::get('rate_limit.window', 60));
 
         $now = time();
         // Fixed window: everyone in the same window shares a bucket key.

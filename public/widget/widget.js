@@ -91,6 +91,7 @@
     var STORAGE_KEY = 'hoai_conversation_id';
     var STORAGE_KEY_OPEN = 'hoai_widget_open';
     var STORAGE_KEY_FORM = 'hoai_form_data';
+    var STORAGE_KEY_TOKEN = 'hoai_identity_token';
     var conversationId = null;
     var formData = null;
 
@@ -126,11 +127,14 @@
         } catch (e) { /* storage unavailable; state just won't survive navigation */ }
     }
 
-    var host, root, panel, launcher, log, input, form, sendButton, statusLine, formOverlay, formNameInput, formEmailInput, formDepartmentSelect;
+    var host, root, panel, launcher, log, input, form, sendButton, statusLine, formOverlay,
+        formNameInput, formEmailInput, formDepartmentSelect, formPasswordGroup, formPasswordInput,
+        formError, formSubmitBtn;
     var isOpen = false;
     var isBusy = false;
     var hasMessages = false;
     var formSubmitted = false;
+    var formBusy = false;
 
     var reduceMotion = window.matchMedia
         ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -243,6 +247,14 @@
             '  background: #f3f4f6; color: #374151;',
             '}',
             '.form-actions .btn-secondary:hover { background: #e5e7eb; }',
+            '.form-actions button[disabled] { opacity: .6; cursor: not-allowed; }',
+            '.form-hint { font-size: 12px; color: #6b7280; margin: -10px 0 16px; }',
+            '.form-hint a { color: var(--accent); }',
+            '.form-error {',
+            '  display: none; font-size: 13px; color: #991b1b; background: #fef2f2;',
+            '  border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; margin-bottom: 16px;',
+            '}',
+            '.form-error.show { display: block; }',
             '.composer { flex: none; border-top: 1px solid #e5e7eb; background: #fff; padding: 10px; }',
             '.composer form { display: flex; gap: 8px; align-items: flex-end; }',
             '.composer textarea {',
@@ -678,6 +690,44 @@
         formData = data;
     }
 
+    /**
+     * A token obtained by signing in from inside the widget has to survive a
+     * page navigation the same way the WHMCS-hook token would, or the visitor
+     * would be asked to sign in again on every page. The token's own expiry
+     * (readable — see IdentityToken's documented wire format) is checked
+     * before trusting a stored one, since the server would reject an expired
+     * one anyway and there is no point sending it.
+     */
+    function loadStoredToken() {
+        try {
+            var stored = window.sessionStorage.getItem(STORAGE_KEY_TOKEN);
+
+            if (!stored) {
+                return;
+            }
+
+            var parsed = JSON.parse(stored);
+            var expiresAt = Number(parsed && parsed.expiresAt);
+
+            if (parsed && parsed.token && expiresAt > Date.now() / 1000) {
+                settings.token = parsed.token;
+            } else {
+                window.sessionStorage.removeItem(STORAGE_KEY_TOKEN);
+            }
+        } catch (e) { /* storage unavailable or corrupt; carry on signed out */ }
+    }
+
+    function saveToken(token, expiresIn) {
+        settings.token = token;
+
+        try {
+            window.sessionStorage.setItem(STORAGE_KEY_TOKEN, JSON.stringify({
+                token: token,
+                expiresAt: Math.floor(Date.now() / 1000) + Number(expiresIn || 0)
+            }));
+        } catch (e) { /* storage unavailable; token still works for this page load */ }
+    }
+
     function showForm() {
         if (formSubmitted || !formOverlay) {
             return;
@@ -692,35 +742,113 @@
         }
     }
 
-    function submitForm() {
-        var name = formNameInput.value.trim();
-        var email = formEmailInput.value.trim();
-        var department = formDepartmentSelect.value;
-
-        if (name === '' || email === '') {
-            alert('Please fill in all required fields.');
+    function setFormError(message) {
+        if (!formError) {
             return;
         }
-
-        var dept = String(department || 'sales').toLowerCase();
-
-        // Services department requires WHMCS login (checked via token)
-        if (dept === 'services' && !settings.token) {
-            window.location.href = 'https://my.hostorio.com/clientarea.php?action=login&redirect=/clientarea.php';
-            return;
+        if (message) {
+            formError.textContent = message;
+            formError.classList.add('show');
+        } else {
+            formError.textContent = '';
+            formError.classList.remove('show');
         }
+    }
 
+    function setFormBusy(busy) {
+        formBusy = busy;
+        formSubmitBtn.disabled = busy;
+    }
+
+    function isServicesDepartment() {
+        return formDepartmentSelect.value === 'services';
+    }
+
+    /** Toggle the password field and button label for the selected department. */
+    function syncFormForDepartment() {
+        var needsLogin = isServicesDepartment() && !settings.token;
+
+        formPasswordGroup.style.display = needsLogin ? '' : 'none';
+        formPasswordInput.required = needsLogin;
+        formSubmitBtn.textContent = needsLogin ? 'Sign In & Start Chat' : 'Start Chat';
+        setFormError('');
+    }
+
+    function finishFormSubmit(name, email, dept) {
         saveFormData({ name: name, email: email, department: dept });
         formSubmitted = true;
         hideForm();
 
-        // Show welcome message and suggestions
         if (!hasMessages) {
             addMessage('bot', config.welcome);
             showSuggestions();
         }
 
         input.focus();
+    }
+
+    function submitForm() {
+        if (formBusy) {
+            return;
+        }
+
+        var name = formNameInput.value.trim();
+        var email = formEmailInput.value.trim();
+        var dept = isServicesDepartment() ? 'services' : 'sales';
+
+        if (name === '' || email === '') {
+            setFormError('Please fill in your name and email.');
+            return;
+        }
+
+        // Sales never needs proof of identity — start the chat right away.
+        if (dept !== 'services' || settings.token) {
+            finishFormSubmit(name, email, dept);
+            return;
+        }
+
+        var password = formPasswordInput.value;
+
+        if (password === '') {
+            setFormError('Please enter your WHMCS password.');
+            return;
+        }
+
+        setFormError('');
+        setFormBusy(true);
+
+        var loginUrl = settings.endpoint.replace(/\/chat$/, '/identity/login');
+
+        fetch(loginUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, password: password })
+        }).then(function (response) {
+            return response.json().then(function (body) {
+                return { status: response.status, body: body };
+            }).catch(function () {
+                return { status: response.status, body: null };
+            });
+        }).then(function (result) {
+            setFormBusy(false);
+
+            if (result.body && result.body.ok && result.body.token) {
+                saveToken(result.body.token, result.body.expires_in);
+                formPasswordInput.value = '';
+                finishFormSubmit(name, email, 'services');
+                return;
+            }
+
+            formPasswordInput.value = '';
+            formPasswordInput.focus();
+
+            var message = (result.body && result.body.error && result.body.error.message)
+                || 'Sign-in failed. Please check your email and password and try again.';
+            setFormError(message);
+        }).catch(function () {
+            setFormBusy(false);
+            setFormError('Could not reach the server. Please check your connection and try again.');
+        });
     }
 
     // ── Build ────────────────────────────────────────────────────────────────
@@ -902,27 +1030,72 @@
         deptGroup.appendChild(formDepartmentSelect);
         formCard.appendChild(deptGroup);
 
+        // Password field — only shown for Services, and only until a token
+        // (from a prior in-widget sign-in or a WHMCS-hook data-token) exists.
+        formPasswordGroup = document.createElement('div');
+        formPasswordGroup.className = 'form-group';
+        var passwordLabel = document.createElement('label');
+        passwordLabel.textContent = 'WHMCS Password *';
+        formPasswordInput = document.createElement('input');
+        formPasswordInput.type = 'password';
+        formPasswordInput.placeholder = 'Your WHMCS account password';
+        formPasswordInput.autocomplete = 'current-password';
+        formPasswordGroup.appendChild(passwordLabel);
+        formPasswordGroup.appendChild(formPasswordInput);
+        formCard.appendChild(formPasswordGroup);
+
+        var formHint = document.createElement('p');
+        formHint.className = 'form-hint';
+        var forgotLink = document.createElement('a');
+        forgotLink.href = 'https://my.hostorio.com/clientarea.php?action=login';
+        forgotLink.target = '_blank';
+        forgotLink.rel = 'noopener noreferrer';
+        forgotLink.textContent = 'Forgot your password, or need to sign in another way?';
+        formHint.appendChild(forgotLink);
+        formCard.appendChild(formHint);
+
+        formError = document.createElement('div');
+        formError.className = 'form-error';
+        formError.setAttribute('role', 'alert');
+        formCard.appendChild(formError);
+
+        formDepartmentSelect.addEventListener('change', syncFormForDepartment);
+
+        [formNameInput, formEmailInput, formPasswordInput].forEach(function (field) {
+            field.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submitForm();
+                }
+            });
+        });
+
         // Form buttons
         var formActions = document.createElement('div');
         formActions.className = 'form-actions';
 
-        var submitBtn = document.createElement('button');
-        submitBtn.type = 'button';
-        submitBtn.className = 'btn-primary';
-        submitBtn.textContent = 'Start Chat';
-        submitBtn.addEventListener('click', submitForm);
-        submitBtn.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                submitForm();
-            }
-        });
+        formSubmitBtn = document.createElement('button');
+        formSubmitBtn.type = 'button';
+        formSubmitBtn.className = 'btn-primary';
+        formSubmitBtn.textContent = 'Start Chat';
+        formSubmitBtn.addEventListener('click', submitForm);
 
-        formActions.appendChild(submitBtn);
+        formActions.appendChild(formSubmitBtn);
         formCard.appendChild(formActions);
 
         formOverlay.appendChild(formCard);
         panel.appendChild(formOverlay);
+
+        // Pre-fill from a previous fill-in on this same page (e.g. a Services
+        // visitor being asked to re-authenticate because their token expired
+        // mid-session) — no reason to make them retype their name and email.
+        if (formData) {
+            formNameInput.value = formData.name || '';
+            formEmailInput.value = formData.email || '';
+            formDepartmentSelect.value = formData.department === 'services' ? 'services' : 'sales';
+        }
+
+        syncFormForDepartment();
 
         wrap.appendChild(panel);
         wrap.appendChild(launcher);
@@ -1001,8 +1174,19 @@
     function boot() {
         // Load stored form data if it exists from a previous session
         loadFormData();
+
+        // A token from a prior in-widget sign-in takes precedence unless the
+        // page itself supplied one (e.g. the WHMCS template hook) — either
+        // way, having one means Services no longer needs a password prompt.
+        if (!settings.token) {
+            loadStoredToken();
+        }
+
         if (formData) {
-            formSubmitted = true;
+            // A Services visitor whose token has since expired is no longer
+            // proven — re-show the form (which will ask to sign in again)
+            // rather than quietly continuing as if they still were.
+            formSubmitted = formData.department !== 'services' || !!settings.token;
         }
 
         // Server config first, data- attributes on top: central branding with a

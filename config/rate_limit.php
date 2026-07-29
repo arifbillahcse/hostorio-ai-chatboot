@@ -14,4 +14,10 @@ return [
     'enabled'      => Env::bool('RATE_LIMIT_ENABLED', true),
     'max_requests' => Env::int('RATE_LIMIT_MAX_REQUESTS', 20),
     'window'       => Env::int('RATE_LIMIT_WINDOW', 60),
+
+    // POST /api/identity/login checks a real WHMCS password, so it gets its
+    // own, much tighter budget to blunt brute-force and credential-stuffing
+    // attempts against customer accounts.
+    'login_max_requests' => Env::int('LOGIN_RATE_LIMIT_MAX', 5),
+    'login_window'       => Env::int('LOGIN_RATE_LIMIT_WINDOW', 900),
 ];
