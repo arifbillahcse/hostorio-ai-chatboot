@@ -96,14 +96,22 @@ final class View
             'routing'       => 'Routing',
             'settings'      => 'Settings',
             'diagnostics'   => 'Diagnostics',
+            'widget-demo'   => 'Widget demo',
         ];
 
         $links = '';
 
         foreach ($nav as $path => $label) {
-            $href = $base . ($path === '' ? '' : '/' . $path);
-            $class = $active === $path ? ' class="on"' : '';
-            $links .= '<a href="' . $e($href) . '"' . $class . '>' . $e($label) . '</a>';
+            // Widget demo is not an admin page; link to the public demo instead
+            if ($path === 'widget-demo') {
+                $href = '/widget/demo.html';
+                $class = '';
+                $links .= '<a href="' . $e($href) . '" target="_blank"' . $class . '>' . $e($label) . '</a>';
+            } else {
+                $href = $base . ($path === '' ? '' : '/' . $path);
+                $class = $active === $path ? ' class="on"' : '';
+                $links .= '<a href="' . $e($href) . '"' . $class . '>' . $e($label) . '</a>';
+            }
         }
 
         return '<!DOCTYPE html>
