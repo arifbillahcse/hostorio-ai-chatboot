@@ -90,7 +90,9 @@
 
     var STORAGE_KEY = 'hoai_conversation_id';
     var STORAGE_KEY_OPEN = 'hoai_widget_open';
+    var STORAGE_KEY_FORM = 'hoai_form_data';
     var conversationId = null;
+    var formData = null;
 
     try {
         conversationId = window.sessionStorage.getItem(STORAGE_KEY);
@@ -124,10 +126,11 @@
         } catch (e) { /* storage unavailable; state just won't survive navigation */ }
     }
 
-    var host, root, panel, launcher, log, input, form, sendButton, statusLine;
+    var host, root, panel, launcher, log, input, form, sendButton, statusLine, formOverlay, formNameInput, formEmailInput, formDepartmentSelect;
     var isOpen = false;
     var isBusy = false;
     var hasMessages = false;
+    var formSubmitted = false;
 
     var reduceMotion = window.matchMedia
         ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -210,6 +213,36 @@
             '  padding: 7px 12px; color: #374151;',
             '}',
             '.suggestions button:hover { border-color: var(--accent); color: var(--accent); }',
+            '.form-overlay { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.3); border-radius: 16px; z-index: 1000; }',
+            '.form-overlay.show { display: flex; align-items: center; justify-content: center; }',
+            '.form-card {',
+            '  background: #fff; border-radius: 12px; padding: 24px; max-width: 90%; width: 340px;',
+            '  box-shadow: 0 10px 40px rgba(0,0,0,.3); flex: none;',
+            '}',
+            '.form-card h3 { margin: 0 0 8px; font-size: 18px; font-weight: 700; }',
+            '.form-card p { margin: 0 0 20px; font-size: 13px; color: #6b7280; }',
+            '.form-group { margin-bottom: 16px; }',
+            '.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }',
+            '.form-group input, .form-group select {',
+            '  width: 100%; padding: 10px 12px; font: inherit; font-size: 14px;',
+            '  border: 1px solid #d1d5db; border-radius: 8px; background: #fff;',
+            '}',
+            '.form-group input:focus, .form-group select:focus {',
+            '  outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent;',
+            '}',
+            '.form-actions { display: flex; gap: 10px; justify-content: flex-end; }',
+            '.form-actions button {',
+            '  padding: 10px 16px; border: 0; border-radius: 8px; font: inherit; font-weight: 600;',
+            '  cursor: pointer; font-size: 13px;',
+            '}',
+            '.form-actions .btn-primary {',
+            '  background: var(--accent); color: var(--accent-text);',
+            '}',
+            '.form-actions .btn-primary:hover { opacity: .9; }',
+            '.form-actions .btn-secondary {',
+            '  background: #f3f4f6; color: #374151;',
+            '}',
+            '.form-actions .btn-secondary:hover { background: #e5e7eb; }',
             '.composer { flex: none; border-top: 1px solid #e5e7eb; background: #fff; padding: 10px; }',
             '.composer form { display: flex; gap: 8px; align-items: flex-end; }',
             '.composer textarea {',
@@ -503,6 +536,13 @@
             payload.conversation_id = conversationId;
         }
 
+        // Include form data on first message only
+        if (formData && !conversationId) {
+            payload.visitor_name = formData.name;
+            payload.visitor_email = formData.email;
+            payload.visitor_department = formData.department;
+        }
+
         var headers = { 'Content-Type': 'application/json' };
 
         if (settings.token) {
@@ -595,6 +635,11 @@
         launcher.style.display = 'none';
         rememberOpenState(true);
 
+        if (!formSubmitted) {
+            showForm();
+            return;
+        }
+
         if (!hasMessages) {
             addMessage('bot', config.welcome);
             showSuggestions();
@@ -615,6 +660,67 @@
     function autoGrow() {
         input.style.height = 'auto';
         input.style.height = Math.min(120, input.scrollHeight) + 'px';
+    }
+
+    function loadFormData() {
+        try {
+            var stored = window.sessionStorage.getItem(STORAGE_KEY_FORM);
+            formData = stored ? JSON.parse(stored) : null;
+        } catch (e) {
+            formData = null;
+        }
+    }
+
+    function saveFormData(data) {
+        try {
+            window.sessionStorage.setItem(STORAGE_KEY_FORM, JSON.stringify(data));
+        } catch (e) { /* storage unavailable */ }
+        formData = data;
+    }
+
+    function showForm() {
+        if (formSubmitted || !formOverlay) {
+            return;
+        }
+        formOverlay.classList.add('show');
+        formNameInput.focus();
+    }
+
+    function hideForm() {
+        if (formOverlay) {
+            formOverlay.classList.remove('show');
+        }
+    }
+
+    function submitForm() {
+        var name = formNameInput.value.trim();
+        var email = formEmailInput.value.trim();
+        var department = formDepartmentSelect.value;
+
+        if (name === '' || email === '') {
+            alert('Please fill in all required fields.');
+            return;
+        }
+
+        var dept = String(department || 'sales').toLowerCase();
+
+        // Services department requires WHMCS login (checked via token)
+        if (dept === 'services' && !settings.token) {
+            window.location.href = 'https://my.hostorio.com/clientarea.php?action=login&redirect=/clientarea.php';
+            return;
+        }
+
+        saveFormData({ name: name, email: email, department: dept });
+        formSubmitted = true;
+        hideForm();
+
+        // Show welcome message and suggestions
+        if (!hasMessages) {
+            addMessage('bot', config.welcome);
+            showSuggestions();
+        }
+
+        input.focus();
     }
 
     // ── Build ────────────────────────────────────────────────────────────────
@@ -730,6 +836,94 @@
         panel.appendChild(log);
         panel.appendChild(composer);
 
+        // Form overlay
+        formOverlay = document.createElement('div');
+        formOverlay.className = 'form-overlay';
+        formOverlay.setAttribute('role', 'dialog');
+        formOverlay.setAttribute('aria-modal', 'true');
+        formOverlay.setAttribute('aria-label', 'Pre-chat form');
+
+        var formCard = document.createElement('div');
+        formCard.className = 'form-card';
+
+        var formTitle = document.createElement('h3');
+        formTitle.textContent = 'Please tell us about yourself';
+        formCard.appendChild(formTitle);
+
+        var formIntro = document.createElement('p');
+        formIntro.textContent = 'Fill in a few details to help us assist you better.';
+        formCard.appendChild(formIntro);
+
+        // Name field
+        var nameGroup = document.createElement('div');
+        nameGroup.className = 'form-group';
+        var nameLabel = document.createElement('label');
+        nameLabel.textContent = 'Your Name *';
+        formNameInput = document.createElement('input');
+        formNameInput.type = 'text';
+        formNameInput.placeholder = 'e.g., John Doe';
+        formNameInput.required = true;
+        nameGroup.appendChild(nameLabel);
+        nameGroup.appendChild(formNameInput);
+        formCard.appendChild(nameGroup);
+
+        // Email field
+        var emailGroup = document.createElement('div');
+        emailGroup.className = 'form-group';
+        var emailLabel = document.createElement('label');
+        emailLabel.textContent = 'Your Email *';
+        formEmailInput = document.createElement('input');
+        formEmailInput.type = 'email';
+        formEmailInput.placeholder = 'e.g., john@example.com';
+        formEmailInput.required = true;
+        emailGroup.appendChild(emailLabel);
+        emailGroup.appendChild(formEmailInput);
+        formCard.appendChild(emailGroup);
+
+        // Department field
+        var deptGroup = document.createElement('div');
+        deptGroup.className = 'form-group';
+        var deptLabel = document.createElement('label');
+        deptLabel.textContent = 'Department *';
+        formDepartmentSelect = document.createElement('select');
+        formDepartmentSelect.required = true;
+
+        var salesOption = document.createElement('option');
+        salesOption.value = 'sales';
+        salesOption.textContent = 'Sales';
+        formDepartmentSelect.appendChild(salesOption);
+
+        var servicesOption = document.createElement('option');
+        servicesOption.value = 'services';
+        servicesOption.textContent = 'Services';
+        formDepartmentSelect.appendChild(servicesOption);
+
+        deptGroup.appendChild(deptLabel);
+        deptGroup.appendChild(formDepartmentSelect);
+        formCard.appendChild(deptGroup);
+
+        // Form buttons
+        var formActions = document.createElement('div');
+        formActions.className = 'form-actions';
+
+        var submitBtn = document.createElement('button');
+        submitBtn.type = 'button';
+        submitBtn.className = 'btn-primary';
+        submitBtn.textContent = 'Start Chat';
+        submitBtn.addEventListener('click', submitForm);
+        submitBtn.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submitForm();
+            }
+        });
+
+        formActions.appendChild(submitBtn);
+        formCard.appendChild(formActions);
+
+        formOverlay.appendChild(formCard);
+        panel.appendChild(formOverlay);
+
         wrap.appendChild(panel);
         wrap.appendChild(launcher);
         root.appendChild(wrap);
@@ -805,6 +999,12 @@
     }
 
     function boot() {
+        // Load stored form data if it exists from a previous session
+        loadFormData();
+        if (formData) {
+            formSubmitted = true;
+        }
+
         // Server config first, data- attributes on top: central branding with a
         // per-page escape hatch.
         fetch(settings.configEndpoint, { method: 'GET' })

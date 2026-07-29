@@ -298,6 +298,27 @@ class ConversationStore
     }
 
     /**
+     * Store visitor metadata collected from pre-chat form.
+     */
+    public function setVisitorMetadata(int $conversationId, string $name, string $email, string $department): void
+    {
+        $this->db->execute(
+            sprintf(
+                'UPDATE `%s` SET metadata = :metadata WHERE id = :id',
+                $this->db->table('conversations')
+            ),
+            [
+                'metadata' => json_encode([
+                    'visitor_name' => $name,
+                    'visitor_email' => $email,
+                    'visitor_department' => $department,
+                ]),
+                'id' => $conversationId,
+            ]
+        );
+    }
+
+    /**
      * Stable pseudonymous key for an anonymous visitor.
      *
      * Hashed with APP_KEY so the conversations table does not become a log of

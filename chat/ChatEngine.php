@@ -47,6 +47,9 @@ final class ChatEngine
     private readonly SystemPrompt $systemPrompt;
     private readonly QueryClassifier $classifier;
     private readonly ?ConversationStore $conversations;
+    private readonly string $visitorName;
+    private readonly string $visitorEmail;
+    private readonly string $visitorDepartment;
 
     public function __construct(
         ?LlmRouter $router = null,
@@ -55,6 +58,9 @@ final class ChatEngine
         ?ConversationStore $conversations = null,
         ?SystemPrompt $systemPrompt = null,
         ?QueryClassifier $classifier = null,
+        string $visitorName = '',
+        string $visitorEmail = '',
+        string $visitorDepartment = '',
     ) {
         $this->router         = $router ?? new LlmRouter();
         $this->contextBuilder = $contextBuilder ?? new ContextBuilder();
@@ -62,6 +68,9 @@ final class ChatEngine
         $this->systemPrompt   = $systemPrompt ?? new SystemPrompt();
         $this->classifier     = $classifier ?? new QueryClassifier();
         $this->conversations  = $conversations;
+        $this->visitorName = $visitorName;
+        $this->visitorEmail = $visitorEmail;
+        $this->visitorDepartment = $visitorDepartment;
     }
 
     /**
@@ -104,6 +113,16 @@ final class ChatEngine
 
                 $conversationId = $conversation['id'];
                 $publicId       = $conversation['public_id'];
+
+                // Store visitor metadata on newly created conversations only
+                if (!$conversation['resumed'] && ($this->visitorName || $this->visitorEmail)) {
+                    $this->conversations->setVisitorMetadata(
+                        $conversationId,
+                        $this->visitorName,
+                        $this->visitorEmail,
+                        $this->visitorDepartment
+                    );
+                }
 
                 if ($conversation['resumed']) {
                     $history = $this->conversations->history($conversationId);

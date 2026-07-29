@@ -68,14 +68,26 @@ final class ChatController
             )->withHeaders($limit->headers());
         }
 
+        $visitorName = (string) $request->input('visitor_name', '');
+        $visitorEmail = (string) $request->input('visitor_email', '');
+        $visitorDepartment = (string) $request->input('visitor_department', '');
+
         Logger::info('Chat message received', [
             'identity'        => $identity->toArray(),
             'conversation_id' => $conversationId !== '' ? $conversationId : null,
             'message_length'  => mb_strlen($message, 'UTF-8'),
+            'visitor_name'    => $visitorName !== '' ? $visitorName : null,
+            'visitor_email'   => $visitorEmail !== '' ? $visitorEmail : null,
+            'visitor_dept'    => $visitorDepartment !== '' ? $visitorDepartment : null,
         ]);
 
         try {
-            $engine = new ChatEngine(conversations: $this->conversationStore());
+            $engine = new ChatEngine(
+                conversations: $this->conversationStore(),
+                visitorName: $visitorName,
+                visitorEmail: $visitorEmail,
+                visitorDepartment: $visitorDepartment
+            );
 
             $reply = $engine->ask(
                 $message,
