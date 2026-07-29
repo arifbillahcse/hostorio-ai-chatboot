@@ -59,6 +59,12 @@ return [
         // where WHMCS/WordPress already authenticated the visitor).
         'allow_session' => Env::bool('CHAT_ALLOW_SESSION_IDENTITY', true),
         'session_key'   => 'hoai_customer_id',
+
+        // Shared secret for POST /api/identity/token — lets a WHMCS install on
+        // an older PHP version mint a token over HTTP instead of including
+        // this codebase directly. Blank disables the endpoint entirely (fails
+        // closed rather than accepting requests with no secret to check).
+        'bridge_secret' => Env::get('IDENTITY_BRIDGE_SECRET', ''),
     ],
 
     /*

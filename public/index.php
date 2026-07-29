@@ -45,6 +45,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 use Hostorio\Api\ChatController;
 use Hostorio\Api\HealthController;
+use Hostorio\Api\IdentityController;
 use Hostorio\Api\WidgetController;
 use Hostorio\Core\Request;
 use Hostorio\Core\Router;
@@ -69,9 +70,10 @@ if ($request->path === '/admin' || str_starts_with($request->path, '/admin/')) {
 
 $router = new Router();
 
-$health = new HealthController();
-$chat   = new ChatController();
-$widget = new WidgetController();
+$health   = new HealthController();
+$chat     = new ChatController();
+$widget   = new WidgetController();
+$identity = new IdentityController();
 
 $router->get('/health', $health->ping(...));
 $router->get('/api/health', $health->ping(...));
@@ -80,5 +82,7 @@ $router->get('/api/health/diagnostics', $health->diagnostics(...));
 $router->get('/api/widget/config', $widget->config(...));
 
 $router->post('/api/chat', $chat->send(...));
+
+$router->post('/api/identity/token', $identity->token(...));
 
 $router->dispatch($request)->send();
