@@ -92,6 +92,12 @@
     var STORAGE_KEY_OPEN = 'hoai_widget_open';
     var STORAGE_KEY_FORM = 'hoai_form_data';
     var STORAGE_KEY_TOKEN = 'hoai_identity_token';
+    // Not read on boot — only ever written to. The write itself is the
+    // signal: the browser fires a native `storage` event in every *other*
+    // tab on this origin whenever one tab changes a localStorage key, so
+    // this is how a message sent in one tab reaches every sibling tab
+    // without polling or any server-side push mechanism.
+    var STORAGE_KEY_SYNC = 'hoai_sync_ping';
     var conversationId = null;
     var formData = null;
 
@@ -591,6 +597,7 @@
                     sources: result.body.sources
                 });
 
+                notifyOtherTabs();
                 announce('Reply received.');
                 return;
             }
@@ -1118,6 +1125,65 @@
     }
 
     /**
+     * Tell every other open tab on this origin that the conversation moved
+     * forward. Writing to localStorage is enough — the browser fires a
+     * `storage` event in sibling tabs automatically; it never fires in the
+     * tab that did the writing, so there is no risk of a tab reacting to
+     * its own message.
+     */
+    function notifyOtherTabs() {
+        if (!conversationId) {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(STORAGE_KEY_SYNC, JSON.stringify({
+                conversationId: conversationId,
+                at: Date.now()
+            }));
+        } catch (e) { /* storage unavailable; this tab just won't push to others */ }
+    }
+
+    /**
+     * React to a message sent or received in another tab. Re-fetching and
+     * fully redrawing the log (rather than trying to diff it) keeps this
+     * simple and correct: history is always the source of truth, and a
+     * chat transcript is small enough that redrawing it costs nothing
+     * noticeable.
+     */
+    function handleStorageSync(event) {
+        if (event.key !== STORAGE_KEY_SYNC || !event.newValue || !log) {
+            return;
+        }
+
+        var data;
+
+        try {
+            data = JSON.parse(event.newValue);
+        } catch (e) {
+            return;
+        }
+
+        if (!data || !data.conversationId || data.conversationId === conversationId) {
+            return;
+        }
+
+        conversationId = data.conversationId;
+
+        // The other tab already proved a conversation exists for this
+        // visitor — no reason to make this tab ask the pre-chat questions
+        // again.
+        if (!formSubmitted) {
+            formSubmitted = true;
+            hideForm();
+        }
+
+        log.innerHTML = '';
+        hasMessages = false;
+        loadHistory();
+    }
+
+    /**
      * Redisplay a resumed conversation's messages after a page navigation.
      *
      * The conversation itself already continues server-side purely from the
@@ -1212,6 +1278,10 @@
             .then(function () {
                 applyOverrides();
                 build();
+
+                // Cross-tab live updates: a message sent or received in any
+                // other tab on this origin re-syncs this one immediately.
+                window.addEventListener('storage', handleStorageSync);
 
                 return loadHistory();
             })
