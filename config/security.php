@@ -24,6 +24,24 @@ return [
      */
     'trusted_proxies' => [],
 
+    /*
+     * Trust Cloudflare's CF-Connecting-IP header as the real client IP.
+     *
+     * When a site sits behind Cloudflare, REMOTE_ADDR is one of Cloudflare's
+     * own edge IPs, not the visitor's — and it can differ between requests
+     * from the very same browser tab as Cloudflare routes across edge nodes.
+     * Anonymous conversation ownership and rate limiting are both keyed on
+     * this IP, so without this, a reload or a new tab can silently look like
+     * a different visitor and the chat appears to have reset.
+     *
+     * Only enable this if the origin server cannot be reached directly,
+     * bypassing Cloudflare — otherwise anyone can forge this header straight
+     * to the origin and impersonate any IP. Cloudflare's "Authenticated
+     * Origin Pulls" feature (or a firewall rule allowing only Cloudflare's
+     * published IP ranges) provides that guarantee.
+     */
+    'trust_cloudflare' => Env::bool('TRUST_CLOUDFLARE_IP', false),
+
     /* Maximum characters accepted in a single user message. */
     'max_message_length' => 4000,
 

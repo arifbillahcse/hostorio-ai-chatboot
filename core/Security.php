@@ -91,6 +91,20 @@ final class Security
      */
     public static function clientIp(): string
     {
+        // Checked first and unconditionally on the header's presence (not on
+        // REMOTE_ADDR belonging to a known Cloudflare range): Cloudflare's
+        // edge IPs change over time and are numerous, so allow-listing them
+        // is brittle. The opt-in config flag is the actual safety gate here
+        // — see config/security.php for why it defaults to off.
+        if ((bool) Config::get('security.trust_cloudflare', false)) {
+            $cloudflareIp = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '';
+
+            if (is_string($cloudflareIp) && $cloudflareIp !== ''
+                && filter_var($cloudflareIp, FILTER_VALIDATE_IP) !== false) {
+                return $cloudflareIp;
+            }
+        }
+
         $remote = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
         /** @var array<int, string> $trustedProxies */
