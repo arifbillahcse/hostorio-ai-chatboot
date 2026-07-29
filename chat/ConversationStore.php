@@ -201,6 +201,48 @@ class ConversationStore
     }
 
     /**
+     * Turns for redisplay in the widget after a page navigation, if the caller
+     * owns the conversation.
+     *
+     * Unlike history(), this is not filtered for strict user/assistant
+     * alternation — that trimming exists only to keep a provider's turn
+     * sequencing happy, and would silently hide real messages from a customer
+     * looking at their own chat.
+     *
+     * @return array<int, array{role: string, content: string}>|null null when
+     *         the conversation does not exist or this caller does not own it
+     */
+    public function displayHistory(
+        string $publicId,
+        CustomerIdentity $identity,
+        string $clientKey,
+        int $limit = 50
+    ): ?array {
+        $row = $this->findOwned($publicId, $identity, $clientKey);
+
+        if ($row === null) {
+            return null;
+        }
+
+        $rows = $this->db->select(
+            sprintf(
+                'SELECT role, content FROM `%s`
+                  WHERE conversation_id = :cid AND content <> \'\'
+                  ORDER BY id ASC
+                  LIMIT %d',
+                $this->db->table('messages'),
+                max(1, $limit)
+            ),
+            ['cid' => (int) $row['id']]
+        );
+
+        return array_map(
+            static fn (array $r): array => ['role' => (string) $r['role'], 'content' => (string) $r['content']],
+            $rows
+        );
+    }
+
+    /**
      * Append a turn.
      *
      * @param array<string, mixed> $extra

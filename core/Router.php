@@ -124,7 +124,7 @@ final class Router
         return [
             'Access-Control-Allow-Origin'  => in_array('*', $allowed, true) ? '*' : $origin,
             'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers' => 'Content-Type, X-Requested-With',
+            'Access-Control-Allow-Headers' => 'Content-Type, X-Requested-With, X-Chat-Token',
             'Access-Control-Max-Age'       => '600',
             'Vary'                         => 'Origin',
         ];

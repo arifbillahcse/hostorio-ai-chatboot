@@ -114,6 +114,37 @@ final class ChatController
     }
 
     /**
+     * Redisplay a conversation's messages after the widget reloads on a new
+     * page. The conversation id already proves ownership by itself (128 bits
+     * of randomness, checked against the same identity/client-key rule as
+     * resuming one to chat), so this is deliberately not rate limited the way
+     * sending a message is — it is a cheap read, not a paid generation.
+     */
+    public function history(Request $request): Response
+    {
+        $conversationId = Security::sanitizeIdentifier((string) $request->input('conversation_id', ''));
+
+        if ($conversationId === '') {
+            return Response::error('The `conversation_id` field is required.', 422, 'invalid_input');
+        }
+
+        $store = $this->conversationStore();
+
+        if ($store === null) {
+            return Response::error('Conversation history is unavailable.', 503, 'unavailable');
+        }
+
+        $identity = CustomerIdentity::fromRequest($request);
+        $messages = $store->displayHistory($conversationId, $identity, ConversationStore::clientKey($request->ip));
+
+        if ($messages === null) {
+            return Response::error('Conversation not found.', 404, 'not_found');
+        }
+
+        return Response::ok(['messages' => $messages]);
+    }
+
+    /**
      * Conversation persistence is optional: without a working database the
      * chatbot still answers, it just forgets. Better than refusing to talk.
      */

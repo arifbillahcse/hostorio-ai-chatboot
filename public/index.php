@@ -82,6 +82,7 @@ $router->get('/api/health/diagnostics', $health->diagnostics(...));
 $router->get('/api/widget/config', $widget->config(...));
 
 $router->post('/api/chat', $chat->send(...));
+$router->get('/api/chat/history', $chat->history(...));
 
 $router->post('/api/identity/token', $identity->token(...));
 

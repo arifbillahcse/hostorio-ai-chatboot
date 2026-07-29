@@ -89,6 +89,7 @@
     };
 
     var STORAGE_KEY = 'hoai_conversation_id';
+    var STORAGE_KEY_OPEN = 'hoai_widget_open';
     var conversationId = null;
 
     try {
@@ -97,6 +98,30 @@
         // Private browsing or a blocked storage partition. The chat still
         // works; it just starts a new thread each page load.
         conversationId = null;
+    }
+
+    /**
+     * Whether the panel was left open before the visitor navigated to this
+     * page. Without this, a same-site link click looks like the chat was
+     * reset, because the widget itself is torn down and rebuilt on every
+     * page load — only sessionStorage survives that.
+     */
+    function wasOpenBefore() {
+        try {
+            return window.sessionStorage.getItem(STORAGE_KEY_OPEN) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function rememberOpenState(open) {
+        try {
+            if (open) {
+                window.sessionStorage.setItem(STORAGE_KEY_OPEN, '1');
+            } else {
+                window.sessionStorage.removeItem(STORAGE_KEY_OPEN);
+            }
+        } catch (e) { /* storage unavailable; state just won't survive navigation */ }
     }
 
     var host, root, panel, launcher, log, input, form, sendButton, statusLine;
@@ -568,6 +593,7 @@
         panel.classList.add('open');
         launcher.setAttribute('aria-expanded', 'true');
         launcher.style.display = 'none';
+        rememberOpenState(true);
 
         if (!hasMessages) {
             addMessage('bot', config.welcome);
@@ -582,6 +608,7 @@
         panel.classList.remove('open');
         launcher.setAttribute('aria-expanded', 'false');
         launcher.style.display = '';
+        rememberOpenState(false);
         launcher.focus();
     }
 
@@ -720,6 +747,49 @@
         }
     }
 
+    /**
+     * Redisplay a resumed conversation's messages after a page navigation.
+     *
+     * The conversation itself already continues server-side purely from the
+     * id stored in sessionStorage — the model sees the prior turns regardless
+     * of this. What is missing without it is the visible log: without
+     * re-rendering, every new page looks like the chat forgot everything,
+     * even though it did not.
+     *
+     * Always resolves; a failed or empty fetch just leaves the log empty,
+     * same as a first-ever visit.
+     */
+    function loadHistory() {
+        if (!conversationId) {
+            return Promise.resolve();
+        }
+
+        var url = settings.endpoint.replace(/\/chat$/, '/chat/history')
+            + '?conversation_id=' + encodeURIComponent(conversationId);
+
+        var headers = {};
+
+        if (settings.token) {
+            headers['X-Chat-Token'] = settings.token;
+        }
+
+        return fetch(url, { method: 'GET', headers: headers })
+            .then(function (response) { return response.json(); })
+            .then(function (body) {
+                if (!body || !body.ok || !Array.isArray(body.messages)) {
+                    return;
+                }
+
+                body.messages.forEach(function (message) {
+                    addMessage(message.role === 'user' ? 'user' : 'bot', String(message.content || ''));
+                });
+            })
+            .catch(function () {
+                // Unreachable or the conversation no longer exists — carry on
+                // with an empty log rather than blocking the widget on this.
+            });
+    }
+
     // ── Boot ─────────────────────────────────────────────────────────────────
     function applyOverrides() {
         ['title', 'subtitle', 'welcome', 'placeholder', 'launcherLabel', 'accent', 'accentText', 'position']
@@ -755,6 +825,13 @@
             .then(function () {
                 applyOverrides();
                 build();
+
+                return loadHistory();
+            })
+            .then(function () {
+                if (settings.openOnLoad || wasOpenBefore()) {
+                    open();
+                }
             });
     }
 
